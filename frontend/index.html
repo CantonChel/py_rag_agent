@@ -142,10 +142,28 @@
             background: #f0f3ff;
         }
         
+        .doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 4px;
+        }
+        
         .doc-name {
             font-weight: 500;
-            margin-bottom: 4px;
             word-break: break-all;
+            flex: 1;
+        }
+        
+        .doc-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .document-item:hover .doc-actions {
+            opacity: 1;
         }
         
         .doc-meta {
@@ -297,18 +315,45 @@
                             :key="doc.doc_id"
                             class="document-item"
                             :class="{ selected: selectedDocs.includes(doc.doc_id) }"
-                            @click="toggleDocSelection(doc.doc_id)"
                         >
-                            <div class="doc-name">
-                                {{ doc.file_name }}
-                                <span 
-                                    class="status-badge"
-                                    :class="'status-' + doc.status"
-                                >
-                                    {{ statusText(doc.status) }}
-                                </span>
+                            <div class="doc-header">
+                                <div class="doc-name" @click="toggleDocSelection(doc.doc_id)">
+                                    {{ doc.file_name }}
+                                    <span 
+                                        class="status-badge"
+                                        :class="'status-' + doc.status"
+                                    >
+                                        {{ statusText(doc.status) }}
+                                    </span>
+                                </div>
+                                <div class="doc-actions">
+                                    <el-button 
+                                        size="small" 
+                                        :icon="Edit" 
+                                        circle 
+                                        @click.stop="showRenameDialog(doc)"
+                                        title="重命名"
+                                    />
+                                    <el-popconfirm
+                                        title="确定要删除此文档吗？"
+                                        confirm-button-text="删除"
+                                        cancel-button-text="取消"
+                                        @confirm="deleteDocument(doc.doc_id)"
+                                    >
+                                        <template #reference>
+                                            <el-button 
+                                                size="small" 
+                                                :icon="Delete" 
+                                                circle 
+                                                type="danger"
+                                                @click.stop
+                                                title="删除"
+                                            />
+                                        </template>
+                                    </el-popconfirm>
+                                </div>
                             </div>
-                            <div class="doc-meta">
+                            <div class="doc-meta" @click="toggleDocSelection(doc.doc_id)">
                                 {{ formatSize(doc.file_size) }} · 
                                 {{ doc.total_chunks }} 个文本块 ·
                                 {{ formatDate(doc.created_at) }}
@@ -317,6 +362,21 @@
                         
                         <el-empty v-if="documents.length === 0" description="暂无文档" :image-size="60" />
                     </div>
+                    
+                    <!-- 重命名对话框 -->
+                    <el-dialog v-model="renameDialogVisible" title="重命名文档" width="400px">
+                        <el-input 
+                            v-model="newFileName" 
+                            placeholder="请输入新的文件名"
+                            @keyup.enter="renameDocument"
+                        />
+                        <template #footer>
+                            <el-button @click="renameDialogVisible = false">取消</el-button>
+                            <el-button type="primary" @click="renameDocument" :loading="renameLoading">
+                                确定
+                            </el-button>
+                        </template>
+                    </el-dialog>
                 </div>
                 
                 <!-- 右侧主区域 - 对话 -->
@@ -562,6 +622,97 @@
                     console.error(error);
                 };
                 
+                // 删除文档
+                const deleteDocument = async (docId) => {
+                    try {
+                        const response = await fetch(`${apiBase.value}/api/documents/${docId}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.detail || '删除失败');
+                        }
+                        
+                        const result = await response.json();
+                        ElementPlus.ElMessage.success(`文档已删除，同时删除 ${result.deleted_images || 0} 张图片`);
+                        
+                        // 从列表中移除
+                        const index = documents.value.findIndex(d => d.doc_id === docId);
+                        if (index > -1) {
+                            documents.value.splice(index, 1);
+                        }
+                        
+                        // 从选中列表中移除
+                        const selectedIndex = selectedDocs.value.indexOf(docId);
+                        if (selectedIndex > -1) {
+                            selectedDocs.value.splice(selectedIndex, 1);
+                        }
+                        
+                        // 刷新统计
+                        loadStats();
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('删除失败: ' + error.message);
+                        console.error('删除文档失败:', error);
+                    }
+                };
+                
+                // 重命名相关
+                const renameDialogVisible = ref(false);
+                const newFileName = ref('');
+                const renamingDoc = ref(null);
+                const renameLoading = ref(false);
+                
+                // 显示重命名对话框
+                const showRenameDialog = (doc) => {
+                    renamingDoc.value = doc;
+                    newFileName.value = doc.file_name;
+                    renameDialogVisible.value = true;
+                };
+                
+                // 执行重命名
+                const renameDocument = async () => {
+                    if (!newFileName.value.trim()) {
+                        ElementPlus.ElMessage.warning('文件名不能为空');
+                        return;
+                    }
+                    
+                    if (!renamingDoc.value) return;
+                    
+                    renameLoading.value = true;
+                    
+                    try {
+                        const response = await fetch(`${apiBase.value}/api/documents/${renamingDoc.value.doc_id}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                file_name: newFileName.value.trim()
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.detail || '重命名失败');
+                        }
+                        
+                        // 更新本地列表
+                        const doc = documents.value.find(d => d.doc_id === renamingDoc.value.doc_id);
+                        if (doc) {
+                            doc.file_name = newFileName.value.trim();
+                        }
+                        
+                        ElementPlus.ElMessage.success('重命名成功');
+                        renameDialogVisible.value = false;
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('重命名失败: ' + error.message);
+                        console.error('重命名失败:', error);
+                    } finally {
+                        renameLoading.value = false;
+                    }
+                };
+                
                 // 格式化文件大小
                 const formatSize = (bytes) => {
                     if (!bytes) return '0 B';
@@ -617,6 +768,13 @@
                     beforeUpload,
                     handleUploadSuccess,
                     handleUploadError,
+                    deleteDocument,
+                    renameDialogVisible,
+                    newFileName,
+                    renamingDoc,
+                    renameLoading,
+                    showRenameDialog,
+                    renameDocument,
                     formatSize,
                     formatDate,
                     statusText
