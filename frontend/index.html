@@ -259,9 +259,14 @@
     <div id="app">
         <div class="main-container">
             <!-- 头部 -->
-            <div class="header">
-                <h1>🤖 RAG知识库Agent系统</h1>
-                <p>基于LlamaIndex的智能问答系统 - 上传文档，开始对话</p>
+            <div class="header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>🤖 RAG知识库Agent系统</h1>
+                    <p>基于LlamaIndex的智能问答系统 - 上传文档，开始对话</p>
+                </div>
+                <el-button type="warning" @click="goToDocDetail" size="large">
+                    📋 文档详情
+                </el-button>
             </div>
             
             <!-- 主内容区 -->
@@ -303,6 +308,23 @@
                         </el-upload>
                     </div>
                     
+                    <!-- 知识库选择 -->
+                    <div style="margin-bottom: 12px;">
+                        <el-select v-model="selectedKb" placeholder="选择知识库" size="default" style="width: 100%;" @change="onKbChange">
+                            <el-option label="默认知识库" value="default" />
+                            <el-option label="+ 新建知识库" value="__new__" />
+                        </el-select>
+                    </div>
+
+                    <!-- 新建知识库对话框 -->
+                    <el-dialog v-model="newKbDialogVisible" title="新建知识库" width="400px">
+                        <el-input v-model="newKbName" placeholder="请输入知识库名称" />
+                        <template #footer>
+                            <el-button @click="newKbDialogVisible = false">取消</el-button>
+                            <el-button type="primary" @click="createKnowledgeBase" :loading="creatingKb">创建</el-button>
+                        </template>
+                    </el-dialog>
+
                     <!-- 文档列表 -->
                     <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-weight: 500;">文档列表</span>
@@ -317,9 +339,9 @@
                             :class="{ selected: selectedDocs.includes(doc.doc_id) }"
                         >
                             <div class="doc-header">
-                                <div class="doc-name" @click="toggleDocSelection(doc.doc_id)">
+                                <div class="doc-name" @click="showDocDetail(doc)">
                                     {{ doc.file_name }}
-                                    <span 
+                                    <span
                                         class="status-badge"
                                         :class="'status-' + doc.status"
                                     >
@@ -365,8 +387,8 @@
                     
                     <!-- 重命名对话框 -->
                     <el-dialog v-model="renameDialogVisible" title="重命名文档" width="400px">
-                        <el-input 
-                            v-model="newFileName" 
+                        <el-input
+                            v-model="newFileName"
                             placeholder="请输入新的文件名"
                             @keyup.enter="renameDocument"
                         />
@@ -374,6 +396,43 @@
                             <el-button @click="renameDialogVisible = false">取消</el-button>
                             <el-button type="primary" @click="renameDocument" :loading="renameLoading">
                                 确定
+                            </el-button>
+                        </template>
+                    </el-dialog>
+
+                    <!-- 文档详情对话框 -->
+                    <el-dialog v-model="detailDialogVisible" title="文档详情" width="600px">
+                        <div v-if="currentDoc" style="line-height: 1.8;">
+                            <el-descriptions :column="1" border>
+                                <el-descriptions-item label="文件名">
+                                    {{ currentDoc.file_name }}
+                                </el-descriptions-item>
+                                <el-descriptions-item label="状态">
+                                    <el-tag :type="currentDoc.status === 'completed' ? 'success' : currentDoc.status === 'failed' ? 'danger' : 'warning'">
+                                        {{ statusText(currentDoc.status) }}
+                                    </el-tag>
+                                </el-descriptions-item>
+                                <el-descriptions-item label="文件大小">
+                                    {{ formatSize(currentDoc.file_size) }}
+                                </el-descriptions-item>
+                                <el-descriptions-item label="文本块数">
+                                    {{ currentDoc.total_chunks }}
+                                </el-descriptions-item>
+                                <el-descriptions-item label="图片数">
+                                    {{ currentDoc.total_images || 0 }}
+                                </el-descriptions-item>
+                                <el-descriptions-item label="创建时间">
+                                    {{ formatDateTime(currentDoc.created_at) }}
+                                </el-descriptions-item>
+                                <el-descriptions-item label="文档ID">
+                                    <el-tag size="small">{{ currentDoc.doc_id }}</el-tag>
+                                </el-descriptions-item>
+                            </el-descriptions>
+                        </div>
+                        <template #footer>
+                            <el-button @click="detailDialogVisible = false">关闭</el-button>
+                            <el-button type="primary" @click="toggleDocSelection(currentDoc.doc_id); detailDialogVisible = false" v-if="currentDoc">
+                                {{ selectedDocs.includes(currentDoc.doc_id) ? '取消选中' : '选中该文档' }}
                             </el-button>
                         </template>
                     </el-dialog>
@@ -479,6 +538,10 @@
                 // 文档相关
                 const documents = ref([]);
                 const selectedDocs = ref([]);
+                const selectedKb = ref('default');
+                const newKbDialogVisible = ref(false);
+                const newKbName = ref('');
+                const creatingKb = ref(false);
                 const stats = reactive({
                     total_documents: 0,
                     total_chunks: 0,
@@ -517,7 +580,26 @@
                         console.error('加载统计失败:', error);
                     }
                 };
-                
+
+                // 知识库选择变化
+                const onKbChange = (value) => {
+                    if (value === '__new__') {
+                        newKbDialogVisible.value = true;
+                        selectedKb.value = 'default';
+                    }
+                };
+
+                // 创建知识库
+                const createKnowledgeBase = async () => {
+                    if (!newKbName.value.trim()) {
+                        ElementPlus.ElMessage.warning('请输入知识库名称');
+                        return;
+                    }
+                    ElementPlus.ElMessage.info('知识库功能开发中，敬请期待');
+                    newKbDialogVisible.value = false;
+                    newKbName.value = '';
+                };
+
                 // 切换文档选择
                 const toggleDocSelection = (docId) => {
                     const index = selectedDocs.value.indexOf(docId);
@@ -662,6 +744,16 @@
                 const newFileName = ref('');
                 const renamingDoc = ref(null);
                 const renameLoading = ref(false);
+
+                // 文档详情相关
+                const detailDialogVisible = ref(false);
+                const currentDoc = ref(null);
+
+                // 显示文档详情
+                const showDocDetail = async (doc) => {
+                    currentDoc.value = doc;
+                    detailDialogVisible.value = true;
+                };
                 
                 // 显示重命名对话框
                 const showRenameDialog = (doc) => {
@@ -731,8 +823,19 @@
                     const date = new Date(dateStr);
                     return date.toLocaleDateString('zh-CN');
                 };
-                
+
+                // 格式化日期时间
+                const formatDateTime = (dateStr) => {
+                    if (!dateStr) return '';
+                    const date = new Date(dateStr);
+                    return date.toLocaleString('zh-CN');
+                };
+
                 // 状态文本
+                const goToDocDetail = () => {
+                    window.location.href = 'doc_detail.html';
+                };
+
                 const statusText = (status) => {
                     const map = {
                         'pending': '等待中',
@@ -756,6 +859,7 @@
                     apiBase,
                     documents,
                     selectedDocs,
+                    selectedKb,
                     stats,
                     messages,
                     userInput,
@@ -777,7 +881,17 @@
                     renameDocument,
                     formatSize,
                     formatDate,
-                    statusText
+                    formatDateTime,
+                    statusText,
+                    newKbDialogVisible,
+                    newKbName,
+                    creatingKb,
+                    onKbChange,
+                    createKnowledgeBase,
+                    goToDocDetail,
+                    detailDialogVisible,
+                    currentDoc,
+                    showDocDetail
                 };
             }
         });
