@@ -876,6 +876,68 @@ async def get_all_images(limit: int = 100, offset: int = 0):
     return ImageListResponse(total=total, images=image_infos)
 
 
+class DocumentUpdateRequest(BaseModel):
+    """
+    文档更新请求模型
+    
+    【用于更新文档元数据】
+    目前支持：文件名重命名
+    """
+    file_name: Optional[str] = Field(None, description="新的文件名")
+
+
+class DocumentUpdateResponse(BaseModel):
+    """文档更新响应模型"""
+    doc_id: str
+    file_name: str
+    message: str
+
+
+@app.put("/api/documents/{doc_id}", response_model=DocumentUpdateResponse)
+async def update_document(doc_id: str, request: DocumentUpdateRequest):
+    """
+    更新文档信息
+    
+    【功能说明】
+    更新文档的元数据信息，目前支持重命名文件
+    
+    【参数】
+    - doc_id: 文档ID
+    - file_name: 新的文件名（可选）
+    """
+    pgvector = get_pgvector()
+    
+    doc = pgvector.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"文档不存在: {doc_id}")
+    
+    update_fields = []
+    update_values = []
+    
+    if request.file_name is not None:
+        update_fields.append("file_name = %s")
+        update_values.append(request.file_name)
+    
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="没有提供要更新的字段")
+    
+    update_values.append(doc_id)
+    sql = f"UPDATE documents SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP WHERE doc_id = %s"
+    
+    try:
+        with pgvector.conn.cursor() as cur:
+            cur.execute(sql, update_values)
+        
+        new_file_name = request.file_name if request.file_name else doc.file_name
+        return DocumentUpdateResponse(
+            doc_id=doc_id,
+            file_name=new_file_name,
+            message="文档更新成功"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+
+
 @app.delete("/api/documents/{doc_id}")
 async def delete_document(doc_id: str):
     """
@@ -884,27 +946,50 @@ async def delete_document(doc_id: str):
     【级联删除】
     删除文档时会同时删除：
     - MinIO中的原始文件
+    - MinIO中的所有关联图片
     - pgvector中的所有chunks
     - pgvector中的所有images
-    - 所有关联关系
+    - chunk_image_relations中的所有关联关系
     """
     pgvector = get_pgvector()
     minio = get_minio()
     
-    # 获取文档信息
     doc = pgvector.get_document(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"文档不存在: {doc_id}")
     
     try:
-        # 删除MinIO中的文件
+        images_sql = """
+            SELECT image_id, minio_bucket, minio_object_name 
+            FROM images WHERE doc_id = %s
+        """
+        images_to_delete = []
+        with pgvector.conn.cursor() as cur:
+            cur.execute(images_sql, (doc_id,))
+            for row in cur.fetchall():
+                minio_bucket, minio_object_name = row[1], row[2]
+                if minio_object_name:
+                    images_to_delete.append((minio_bucket or minio.bucket, minio_object_name))
+        
         if doc.minio_bucket and doc.minio_object_name:
             minio.delete_file(doc.minio_object_name, doc.minio_bucket)
+            print(f"✓ 已删除原始文件: {doc.minio_object_name}")
         
-        # 删除数据库记录（会级联删除chunks和images）
+        for bucket, object_name in images_to_delete:
+            try:
+                minio.delete_file(object_name, bucket)
+                print(f"✓ 已删除图片: {object_name}")
+            except Exception as e:
+                print(f"⚠ 删除图片失败 {object_name}: {e}")
+        
         pgvector.delete_document(doc_id)
+        print(f"✓ 已删除数据库记录: {doc_id}")
         
-        return {"message": f"文档已删除: {doc_id}", "doc_id": doc_id}
+        return {
+            "message": f"文档已删除: {doc_id}", 
+            "doc_id": doc_id,
+            "deleted_images": len(images_to_delete)
+        }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
