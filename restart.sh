@@ -7,8 +7,27 @@
 
 set -e
 
-PROJECT_DIR="/Users/luolinhao/Documents/trae_projects/py_agentic_rag"
-cd "$PROJECT_DIR"
+# 自动获取脚本所在目录，实现环境无关
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# 查找可用的Python解释器（优先使用系统默认的python，它通常配置了项目依赖）
+find_python() {
+    # 先尝试系统默认的 python 命令
+    if command -v python &> /dev/null; then
+        echo "python"
+        return 0
+    fi
+    # 再尝试 python3 及各版本
+    for cmd in python3 python3.13 python3.12 python3.11 python3.10 python3.9; do
+        if command -v $cmd &> /dev/null; then
+            echo "$cmd"
+            return 0
+        fi
+    done
+    echo "python3"
+}
+PYTHON_CMD="$(find_python)"
 
 echo "=========================================="
 echo "RAG项目重启脚本"
@@ -94,10 +113,14 @@ echo -e "${GREEN}✓ Docker容器已启动${NC}"
 echo ""
 echo -e "${YELLOW}[4/4] 启动主进程...${NC}"
 
+# 设置环境变量（连接Docker映射的端口，以1开头）
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=15432
+export MINIO_ENDPOINT=localhost:19000
+
 # 启动API服务
 echo "  启动API服务..."
-source .venv/bin/activate
-nohup python api.py > logs/api.log 2>&1 &
+nohup $PYTHON_CMD api.py > logs/api.log 2>&1 &
 API_PID=$!
 echo "  API服务已启动 (PID: $API_PID)"
 
@@ -116,7 +139,7 @@ echo ""
 # 启动前端服务
 echo "  启动前端服务..."
 cd frontend
-nohup python -m http.server 3000 > ../logs/frontend.log 2>&1 &
+nohup $PYTHON_CMD -m http.server 3000 > ../logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 cd ..
 echo "  前端服务已启动 (PID: $FRONTEND_PID)"
