@@ -815,11 +815,13 @@
                 });
                 
                 if (res.ok) {
-                    showToast('文档已删除');
+                    const result = await res.json();
+                    showToast(`文档已删除，同时删除 ${result.deleted_images || 0} 张图片`);
                     await loadDocuments();
                     await loadStats();
                 } else {
-                    showToast('删除失败', true);
+                    const error = await res.json();
+                    showToast('删除失败: ' + (error.detail || '未知错误'), true);
                 }
             } catch (e) {
                 showToast('删除失败: ' + e.message, true);

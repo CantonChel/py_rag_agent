@@ -204,18 +204,20 @@ class MinIOStorage:
             print(f"✗ 获取文件流失败: {e}")
             return None
     
-    def delete_file(self, object_name: str) -> bool:
+    def delete_file(self, object_name: str, bucket: str = None) -> bool:
         """
         删除文件
         
         参数:
             object_name: 对象名称
+            bucket: 存储桶名称（可选，默认使用实例默认桶）
             
         返回:
             是否删除成功
         """
+        target_bucket = bucket or self.bucket
         try:
-            self.client.remove_object(self.bucket, object_name)
+            self.client.remove_object(target_bucket, object_name)
             return True
         except S3Error as e:
             print(f"✗ 文件删除失败: {e}")
