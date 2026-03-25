@@ -2,10 +2,21 @@
 -- 创建pgvector扩展
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- 创建知识库表
+CREATE TABLE IF NOT EXISTS knowledge_bases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kb_id VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 创建文档表
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     doc_id VARCHAR(255) UNIQUE NOT NULL,
+    kb_id VARCHAR(255) DEFAULT 'default' REFERENCES knowledge_bases(kb_id) ON DELETE SET NULL,
     file_name VARCHAR(500) NOT NULL,
     file_type VARCHAR(50) NOT NULL,
     file_path VARCHAR(1000),
