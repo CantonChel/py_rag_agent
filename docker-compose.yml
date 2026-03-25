@@ -1,0 +1,72 @@
+services:
+  # ============================================================
+  # MinIO - 对象存储服务
+  # 用于存储上传的原始文件
+  # 控制台: http://localhost:9001
+  # ============================================================
+  minio:
+    image: minio/minio:latest
+    container_name: rag_minio
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - rag_network
+
+  # ============================================================
+  # PostgreSQL + pgvector - 向量数据库
+  # 存储文本块和向量
+  # ============================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag_postgres
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: rag_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag_network
+
+  # ============================================================
+  # Redis - 缓存服务（可选）
+  # 用于缓存会话和检索结果
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: rag_redis
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - rag_network
+
+volumes:
+  minio_data:
+  postgres_data:
+  redis_data:
+
+networks:
+  rag_network:
+    driver: bridge

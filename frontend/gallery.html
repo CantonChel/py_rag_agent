@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG知识库 - 文档浏览</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: #16213e;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            color: #e94560;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 16px;
+        }
+        
+        .nav-links a {
+            color: #aaa;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        .nav-links a:hover {
+            background: #0f3460;
+            color: #fff;
+        }
+        
+        .content {
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: #16213e;
+            padding: 20px 32px;
+            border-radius: 12px;
+            border: 1px solid #0f3460;
+        }
+        
+        .stat-card h3 {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        .doc-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .doc-card {
+            background: #16213e;
+            border-radius: 12px;
+            border: 1px solid #0f3460;
+            overflow: hidden;
+        }
+        
+        .doc-header {
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .doc-header:hover {
+            background: #1a2a4a;
+        }
+        
+        .doc-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .doc-icon {
+            font-size: 24px;
+        }
+        
+        .doc-name {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .doc-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            color: #888;
+        }
+        
+        .doc-meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .doc-meta .count {
+            color: #e94560;
+            font-weight: 500;
+        }
+        
+        .expand-icon {
+            font-size: 20px;
+            transition: transform 0.3s;
+            color: #888;
+        }
+        
+        .doc-card.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+        
+        .doc-content {
+            display: none;
+            border-top: 1px solid #0f3460;
+        }
+        
+        .doc-card.expanded .doc-content {
+            display: block;
+        }
+        
+        .chunk-list {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .chunk-card {
+            background: #0f0f1a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .chunk-header {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        
+        .chunk-header:hover {
+            background: #1a1a2e;
+        }
+        
+        .chunk-title {
+            font-size: 14px;
+            color: #aaa;
+        }
+        
+        .chunk-title .chunk-index {
+            color: #e94560;
+            font-weight: 500;
+        }
+        
+        .chunk-content {
+            display: none;
+            padding: 16px;
+        }
+        
+        .chunk-card.expanded .chunk-content {
+            display: block;
+        }
+        
+        .chunk-text {
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 14px;
+        }
+        
+        .chunk-text img {
+            max-width: 100%;
+            max-height: 400px;
+            margin: 12px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .chunk-text img:hover {
+            transform: scale(1.02);
+        }
+        
+        .chunk-images {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #1a1a2e;
+        }
+        
+        .chunk-images-title {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        
+        .image-paths {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .image-path {
+            font-family: monospace;
+            font-size: 12px;
+            color: #e94560;
+            background: #1a1a2e;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+        
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-completed {
+            background: #1a4a3a;
+            color: #4ade80;
+        }
+        
+        .status-failed {
+            background: #4a1a1a;
+            color: #f87171;
+        }
+        
+        .status-processing {
+            background: #4a3a1a;
+            color: #fbbf24;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal img {
+            max-width: 90%;
+            max-height: 90%;
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 30px;
+            color: #fff;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>RAG知识库 - 文档浏览</h1>
+        <div class="nav-links">
+            <a href="upload.html">上传文档</a>
+            <a href="chat.html">智能问答</a>
+            <a href="gallery.html">文档浏览</a>
+        </div>
+    </div>
+    
+    <div class="content">
+        <div class="stats">
+            <div class="stat-card">
+                <h3>文档总数</h3>
+                <div class="value" id="doc-count">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>文本分段</h3>
+                <div class="value" id="chunk-count">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>图片总数</h3>
+                <div class="value" id="image-count">-</div>
+            </div>
+        </div>
+        
+        <div class="doc-list" id="doc-list">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+    
+    <div class="modal" id="image-modal">
+        <span class="modal-close" onclick="closeModal()">&times;</span>
+        <img id="modal-image" src="" alt="大图">
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let totalChunks = 0;
+        let totalImages = 0;
+        
+        async function loadDocuments() {
+            const list = document.getElementById('doc-list');
+            list.innerHTML = '<div class="loading">加载中...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/documents/with-content`);
+                const data = await response.json();
+                
+                if (data.documents.length === 0) {
+                    list.innerHTML = '<div class="empty-state"><h2>暂无文档</h2><p>请先上传文档</p></div>';
+                    return;
+                }
+                
+                totalChunks = 0;
+                totalImages = 0;
+                
+                list.innerHTML = data.documents.map(doc => {
+                    totalChunks += doc.total_chunks;
+                    totalImages += doc.total_images;
+                    
+                    return `
+                        <div class="doc-card" data-doc-id="${doc.doc_id}">
+                            <div class="doc-header" onclick="toggleDoc('${doc.doc_id}')">
+                                <div class="doc-info">
+                                    <span class="doc-icon">📄</span>
+                                    <span class="doc-name">${escapeHtml(doc.file_name)}</span>
+                                    <span class="status-badge status-${doc.status}">${doc.status}</span>
+                                </div>
+                                <div class="doc-meta">
+                                    <span>分段: <span class="count">${doc.total_chunks}</span></span>
+                                    <span>图片: <span class="count">${doc.total_images}</span></span>
+                                </div>
+                                <span class="expand-icon">▼</span>
+                            </div>
+                            <div class="doc-content">
+                                <div class="chunk-list">
+                                    ${doc.chunks.length > 0 ? doc.chunks.map(chunk => renderChunk(chunk)).join('') : '<div class="empty-state">此文档无分段数据</div>'}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                document.getElementById('doc-count').textContent = data.documents.length;
+                document.getElementById('chunk-count').textContent = totalChunks;
+                document.getElementById('image-count').textContent = totalImages;
+                
+            } catch (error) {
+                console.error('加载文档失败:', error);
+                list.innerHTML = `<div class="empty-state"><h2>加载失败</h2><p>${escapeHtml(error.message)}</p></div>`;
+            }
+        }
+        
+        function renderChunk(chunk) {
+            const textHtml = renderMarkdownWithImages(chunk.text_with_images || chunk.text);
+            
+            const imagePaths = chunk.images.map(img => 
+                `<span class="image-path">MinIO: ${img.minio_path}</span>`
+            ).join('');
+            
+            return `
+                <div class="chunk-card" data-chunk-id="${chunk.chunk_id}">
+                    <div class="chunk-header" onclick="toggleChunk('${chunk.chunk_id}')">
+                        <div class="chunk-title">
+                            <span class="chunk-index">分段 #${chunk.chunk_index}</span>
+                            ${chunk.page_number ? `<span style="margin-left:12px;color:#666">页码: ${chunk.page_number}</span>` : ''}
+                            ${chunk.section_title ? `<span style="margin-left:12px;color:#666">${escapeHtml(chunk.section_title)}</span>` : ''}
+                        </div>
+                        <span class="expand-icon" style="font-size:14px">▼</span>
+                    </div>
+                    <div class="chunk-content">
+                        <div class="chunk-text">${textHtml}</div>
+                        ${chunk.images.length > 0 ? `
+                            <div class="chunk-images">
+                                <div class="chunk-images-title">图片MinIO路径：</div>
+                                <div class="image-paths">${imagePaths}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderMarkdownWithImages(text) {
+            let html = escapeHtml(text);
+            
+            const imageRegex = /!\[.*?\]\((.*?)\)/g;
+            html = html.replace(imageRegex, (match, url) => {
+                if (url.startsWith('http')) {
+                    return `<img src="${url}" alt="文档图片" onclick="openModal('${url}')" onerror="this.style.display='none'">`;
+                }
+                return match;
+            });
+            
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            html = html.replace(/^---$/gm, '<hr>');
+            
+            return html;
+        }
+        
+        function toggleDoc(docId) {
+            const card = document.querySelector(`.doc-card[data-doc-id="${docId}"]`);
+            card.classList.toggle('expanded');
+        }
+        
+        function toggleChunk(chunkId) {
+            const card = document.querySelector(`.chunk-card[data-chunk-id="${chunkId}"]`);
+            card.classList.toggle('expanded');
+        }
+        
+        function openModal(url) {
+            document.getElementById('modal-image').src = url;
+            document.getElementById('image-modal').classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('image-modal').classList.remove('active');
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        document.getElementById('image-modal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                closeModal();
+            }
+        });
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+        
+        loadDocuments();
+    </script>
+</body>
+</html>

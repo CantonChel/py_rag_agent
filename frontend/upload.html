@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理 - RAG系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #343541;
+            color: #ececf1;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: #202123;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #4e4f60;
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 18px;
+            font-weight: 500;
+        }
+        
+        .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #40414f;
+            border: 1px solid #565869;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        
+        .back-btn:hover {
+            background: #4a4b5a;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: #40414f;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #565869;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 600;
+            color: #19c37d;
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #8e8ea0;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        
+        .panel {
+            background: #40414f;
+            border-radius: 12px;
+            border: 1px solid #565869;
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            padding: 16px 20px;
+            background: #2a2b32;
+            border-bottom: 1px solid #565869;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .panel-body {
+            padding: 20px;
+        }
+        
+        .upload-zone {
+            border: 2px dashed #565869;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: rgba(0, 0, 0, 0.1);
+        }
+        
+        .upload-zone:hover {
+            border-color: #19c37d;
+            background: rgba(25, 195, 125, 0.05);
+        }
+        
+        .upload-zone.dragover {
+            border-color: #19c37d;
+            background: rgba(25, 195, 125, 0.1);
+        }
+        
+        .upload-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            color: #8e8ea0;
+        }
+        
+        .upload-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .upload-hint {
+            font-size: 13px;
+            color: #8e8ea0;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .upload-options {
+            margin-top: 20px;
+        }
+        
+        .option-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #565869;
+        }
+        
+        .option-row:last-child {
+            border-bottom: none;
+        }
+        
+        .option-label {
+            font-size: 14px;
+        }
+        
+        .option-desc {
+            font-size: 12px;
+            color: #8e8ea0;
+            margin-top: 2px;
+        }
+        
+        .toggle {
+            width: 44px;
+            height: 24px;
+            background: #565869;
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .toggle.active {
+            background: #19c37d;
+        }
+        
+        .toggle::after {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            top: 3px;
+            left: 3px;
+            transition: transform 0.2s;
+        }
+        
+        .toggle.active::after {
+            transform: translateX(20px);
+        }
+        
+        .upload-btn {
+            width: 100%;
+            padding: 14px;
+            background: #19c37d;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background 0.2s;
+        }
+        
+        .upload-btn:hover {
+            background: #1a9c6a;
+        }
+        
+        .upload-btn:disabled {
+            background: #565869;
+            cursor: not-allowed;
+        }
+        
+        .file-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: #2a2b32;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            gap: 12px;
+        }
+        
+        .file-icon {
+            width: 36px;
+            height: 36px;
+            background: #19c37d;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .file-name {
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .file-meta {
+            font-size: 12px;
+            color: #8e8ea0;
+            margin-top: 2px;
+        }
+        
+        .file-status {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        
+        .file-status.completed {
+            background: rgba(25, 195, 125, 0.2);
+            color: #19c37d;
+        }
+        
+        .file-status.processing {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+        
+        .file-status.failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+        
+        .file-status.pending {
+            background: rgba(142, 142, 160, 0.2);
+            color: #8e8ea0;
+        }
+        
+        .file-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .action-btn {
+            width: 32px;
+            height: 32px;
+            background: transparent;
+            border: 1px solid #565869;
+            border-radius: 6px;
+            color: #8e8ea0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        
+        .action-btn:hover {
+            background: #4a4b5a;
+            color: #fff;
+        }
+        
+        .action-btn.delete:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+            color: #ef4444;
+        }
+        
+        .progress-bar {
+            height: 4px;
+            background: #565869;
+            border-radius: 2px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #19c37d;
+            border-radius: 2px;
+            transition: width 0.3s;
+        }
+        
+        .pending-files {
+            margin-top: 16px;
+        }
+        
+        .pending-file-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            background: #2a2b32;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            gap: 12px;
+        }
+        
+        .pending-file-name {
+            flex: 1;
+            font-size: 14px;
+        }
+        
+        .pending-file-size {
+            font-size: 12px;
+            color: #8e8ea0;
+        }
+        
+        .remove-pending {
+            width: 24px;
+            height: 24px;
+            background: transparent;
+            border: none;
+            color: #8e8ea0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+        }
+        
+        .remove-pending:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #8e8ea0;
+        }
+        
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .icon {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+        }
+        
+        .refresh-btn {
+            padding: 6px 12px;
+            background: transparent;
+            border: 1px solid #565869;
+            border-radius: 6px;
+            color: #8e8ea0;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .refresh-btn:hover {
+            background: #4a4b5a;
+            color: #fff;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #565869;
+            border-radius: 50%;
+            border-top-color: #19c37d;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 12px 20px;
+            background: #19c37d;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s;
+            z-index: 1000;
+        }
+        
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .toast.error {
+            background: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-title">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+            知识库管理
+        </div>
+        <button class="back-btn" onclick="goBack()">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            返回对话
+        </button>
+    </div>
+    
+    <div class="container">
+        <div class="stats-bar" id="statsBar">
+            <div class="stat-card">
+                <div class="stat-value" id="totalDocs">0</div>
+                <div class="stat-label">文档总数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="completedDocs">0</div>
+                <div class="stat-label">已完成处理</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="processingDocs">0</div>
+                <div class="stat-label">处理中</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalChunks">0</div>
+                <div class="stat-label">文本片段</div>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="panel">
+                <div class="panel-header">
+                    📤 上传文档
+                </div>
+                <div class="panel-body">
+                    <div class="upload-zone" id="uploadZone">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <div class="upload-text">拖拽文件到此处或点击上传</div>
+                        <div class="upload-hint">支持 PDF、Word、TXT、Markdown 等格式，单个文件最大 50MB</div>
+                        <input type="file" class="file-input" id="fileInput" multiple accept=".pdf,.doc,.docx,.txt,.md,.ppt,.pptx,.xls,.xlsx">
+                    </div>
+                    
+                    <div class="pending-files" id="pendingFiles"></div>
+                    
+                    <div class="upload-options">
+                        <div class="option-row">
+                            <div>
+                                <div class="option-label">启用OCR识别</div>
+                                <div class="option-desc">识别图片和扫描件中的文字</div>
+                            </div>
+                            <div class="toggle active" id="ocrToggle" onclick="toggleOption('ocr')"></div>
+                        </div>
+                        <div class="option-row">
+                            <div>
+                                <div class="option-label">提取图片</div>
+                                <div class="option-desc">提取文档中的图片并建立索引</div>
+                            </div>
+                            <div class="toggle active" id="imageToggle" onclick="toggleOption('image')"></div>
+                        </div>
+                    </div>
+                    
+                    <button class="upload-btn" id="uploadBtn" onclick="uploadFiles()" disabled>
+                        开始上传
+                    </button>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <div class="panel-header">
+                    📚 文档列表
+                    <button class="refresh-btn" onclick="loadDocuments()">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                        刷新
+                    </button>
+                </div>
+                <div class="panel-body">
+                    <div class="file-list" id="fileList">
+                        <div class="empty-state">
+                            <div class="empty-icon">📭</div>
+                            <div>暂无文档，请上传</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        
+        let documents = [];
+        let pendingFiles = [];
+        let options = {
+            ocr: true,
+            image: true
+        };
+        
+        async function init() {
+            await loadDocuments();
+            await loadStats();
+            setupUploadZone();
+        }
+        
+        function setupUploadZone() {
+            const zone = document.getElementById('uploadZone');
+            const input = document.getElementById('fileInput');
+            
+            zone.addEventListener('click', () => input.click());
+            
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('dragover');
+            });
+            
+            zone.addEventListener('dragleave', () => {
+                zone.classList.remove('dragover');
+            });
+            
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                addFiles(e.dataTransfer.files);
+            });
+            
+            input.addEventListener('change', (e) => {
+                addFiles(e.target.files);
+                input.value = '';
+            });
+        }
+        
+        function addFiles(fileList) {
+            for (const file of fileList) {
+                if (!pendingFiles.find(f => f.name === file.name)) {
+                    pendingFiles.push(file);
+                }
+            }
+            updatePendingFiles();
+        }
+        
+        function updatePendingFiles() {
+            const container = document.getElementById('pendingFiles');
+            const btn = document.getElementById('uploadBtn');
+            
+            if (pendingFiles.length === 0) {
+                container.innerHTML = '';
+                btn.disabled = true;
+                return;
+            }
+            
+            btn.disabled = false;
+            container.innerHTML = pendingFiles.map((file, idx) => `
+                <div class="pending-file-item">
+                    <span class="pending-file-name">📄 ${file.name}</span>
+                    <span class="pending-file-size">${formatSize(file.size)}</span>
+                    <button class="remove-pending" onclick="removePendingFile(${idx})">✕</button>
+                </div>
+            `).join('');
+        }
+        
+        function removePendingFile(idx) {
+            pendingFiles.splice(idx, 1);
+            updatePendingFiles();
+        }
+        
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+        }
+        
+        function toggleOption(key) {
+            options[key] = !options[key];
+            const toggle = document.getElementById(key + 'Toggle');
+            toggle.classList.toggle('active', options[key]);
+        }
+        
+        async function uploadFiles() {
+            if (pendingFiles.length === 0) return;
+            
+            const btn = document.getElementById('uploadBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> 上传中...';
+            
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const file of pendingFiles) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('enable_ocr', options.ocr);
+                formData.append('extract_images', options.image);
+                
+                try {
+                    const res = await fetch(`${API_BASE}/api/documents/upload`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (res.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (e) {
+                    failCount++;
+                    console.error('上传失败:', e);
+                }
+            }
+            
+            pendingFiles = [];
+            updatePendingFiles();
+            btn.innerHTML = '开始上传';
+            
+            if (successCount > 0) {
+                showToast(`成功上传 ${successCount} 个文件`);
+            }
+            if (failCount > 0) {
+                showToast(`${failCount} 个文件上传失败`, true);
+            }
+            
+            await loadDocuments();
+            await loadStats();
+        }
+        
+        async function loadDocuments() {
+            try {
+                const res = await fetch(`${API_BASE}/api/documents?limit=100`);
+                const data = await res.json();
+                documents = data.documents || [];
+                renderDocuments();
+            } catch (e) {
+                console.error('加载文档列表失败:', e);
+            }
+        }
+        
+        async function loadStats() {
+            try {
+                const res = await fetch(`${API_BASE}/api/stats`);
+                const data = await res.json();
+                
+                document.getElementById('totalDocs').textContent = data.total_documents || 0;
+                document.getElementById('completedDocs').textContent = data.completed_documents || 0;
+                document.getElementById('processingDocs').textContent = data.processing_documents || 0;
+                document.getElementById('totalChunks').textContent = data.total_chunks || 0;
+            } catch (e) {
+                console.error('加载统计失败:', e);
+            }
+        }
+        
+        function renderDocuments() {
+            const container = document.getElementById('fileList');
+            
+            if (documents.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <div>暂无文档，请上传</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = documents.map(doc => {
+                const statusClass = doc.status || 'pending';
+                const statusText = {
+                    'pending': '等待处理',
+                    'processing': '处理中',
+                    'completed': '已完成',
+                    'failed': '处理失败'
+                }[statusClass] || statusClass;
+                
+                const icon = getFileIcon(doc.file_name);
+                
+                return `
+                    <div class="file-item">
+                        <div class="file-icon">${icon}</div>
+                        <div class="file-info">
+                            <div class="file-name">${doc.file_name}</div>
+                            <div class="file-meta">
+                                ${formatSize(doc.file_size || 0)} · 
+                                ${doc.chunk_count || 0} 个片段 ·
+                                ${doc.image_count || 0} 张图片
+                            </div>
+                            ${doc.status === 'processing' ? `
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: ${doc.progress || 0}%"></div>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <span class="file-status ${statusClass}">${statusText}</span>
+                        <div class="file-actions">
+                            <button class="action-btn" onclick="viewDoc('${doc.doc_id}')" title="查看详情">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                            </button>
+                            <button class="action-btn delete" onclick="deleteDoc('${doc.doc_id}')" title="删除">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const icons = {
+                'pdf': '📕',
+                'doc': '📘',
+                'docx': '📘',
+                'txt': '📄',
+                'md': '📝',
+                'ppt': '📊',
+                'pptx': '📊',
+                'xls': '📗',
+                'xlsx': '📗'
+            };
+            return icons[ext] || '📄';
+        }
+        
+        async function deleteDoc(docId) {
+            if (!confirm('确定要删除这个文档吗？此操作不可恢复。')) return;
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/documents/${docId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (res.ok) {
+                    showToast('文档已删除');
+                    await loadDocuments();
+                    await loadStats();
+                } else {
+                    showToast('删除失败', true);
+                }
+            } catch (e) {
+                showToast('删除失败: ' + e.message, true);
+            }
+        }
+        
+        function viewDoc(docId) {
+            window.location.href = 'gallery.html';
+        }
+        
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast show' + (isError ? ' error' : '');
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+        
+        function goBack() {
+            window.location.href = 'chat.html';
+        }
+        
+        init();
+    </script>
+</body>
+</html>

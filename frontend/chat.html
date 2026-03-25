@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG知识库 - 智能问答</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #343541;
+            color: #ececf1;
+            height: 100vh;
+            display: flex;
+        }
+        
+        .sidebar {
+            width: 260px;
+            background: #202123;
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+        }
+        
+        .new-chat-btn {
+            width: 100%;
+            padding: 12px;
+            background: transparent;
+            border: 1px solid #4e4f60;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        
+        .new-chat-btn:hover {
+            background: #2a2b32;
+        }
+        
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+        
+        .chat-history-item {
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #c5c5d2;
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+        
+        .chat-history-item:hover {
+            background: #2a2b32;
+        }
+        
+        .chat-history-item.active {
+            background: #343541;
+            color: #fff;
+        }
+        
+        .sidebar-footer {
+            border-top: 1px solid #4e4f60;
+            padding-top: 8px;
+            margin-top: 8px;
+        }
+        
+        .sidebar-footer-item {
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #c5c5d2;
+            font-size: 14px;
+        }
+        
+        .sidebar-footer-item:hover {
+            background: #2a2b32;
+        }
+        
+        .main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        
+        .chat-header {
+            padding: 12px 20px;
+            background: #343541;
+            border-bottom: 1px solid #4e4f60;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .model-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #40414f;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 0;
+        }
+        
+        .message-wrapper {
+            width: 100%;
+        }
+        
+        .message-wrapper.assistant {
+            background: #444654;
+        }
+        
+        .message {
+            max-width: 768px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            display: flex;
+            gap: 24px;
+        }
+        
+        .message-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 14px;
+        }
+        
+        .message-avatar.user {
+            background: #5436da;
+        }
+        
+        .message-avatar.assistant {
+            background: #19c37d;
+        }
+        
+        .message-content {
+            flex: 1;
+            line-height: 1.75;
+            font-size: 15px;
+        }
+        
+        .message-content pre {
+            background: #0d0d0d;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 16px 0;
+        }
+        
+        .message-content code {
+            font-family: 'Fira Code', monospace;
+            font-size: 14px;
+        }
+        
+        .sources-section {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #565869;
+        }
+        
+        .sources-title {
+            font-size: 13px;
+            color: #8e8ea0;
+            margin-bottom: 12px;
+        }
+        
+        .source-item {
+            background: #40414f;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid #19c37d;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .source-item:hover {
+            background: #4a4b5a;
+        }
+        
+        .source-file {
+            font-size: 13px;
+            color: #19c37d;
+            margin-bottom: 4px;
+        }
+        
+        .source-text {
+            font-size: 13px;
+            color: #c5c5d2;
+            line-height: 1.5;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .source-score {
+            font-size: 12px;
+            color: #8e8ea0;
+            margin-top: 8px;
+        }
+        
+        .input-container {
+            padding: 20px;
+            background: #343541;
+        }
+        
+        .input-wrapper {
+            max-width: 768px;
+            margin: 0 auto;
+            position: relative;
+        }
+        
+        .input-box {
+            width: 100%;
+            background: #40414f;
+            border: 1px solid #565869;
+            border-radius: 12px;
+            padding: 16px 52px 16px 16px;
+            color: #fff;
+            font-size: 15px;
+            resize: none;
+            outline: none;
+            min-height: 56px;
+            max-height: 200px;
+            line-height: 1.5;
+        }
+        
+        .input-box:focus {
+            border-color: #8e8ea0;
+        }
+        
+        .input-box::placeholder {
+            color: #8e8ea0;
+        }
+        
+        .send-btn {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            width: 32px;
+            height: 32px;
+            background: #19c37d;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        .send-btn:hover {
+            background: #1a9c6a;
+        }
+        
+        .send-btn:disabled {
+            background: #565869;
+            cursor: not-allowed;
+        }
+        
+        .welcome-screen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .welcome-title {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 24px;
+        }
+        
+        .welcome-suggestions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            max-width: 680px;
+            width: 100%;
+        }
+        
+        .suggestion-card {
+            background: #40414f;
+            padding: 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 1px solid #565869;
+        }
+        
+        .suggestion-card:hover {
+            background: #4a4b5a;
+        }
+        
+        .suggestion-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .suggestion-desc {
+            font-size: 13px;
+            color: #8e8ea0;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 8px 0;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #8e8ea0;
+            border-radius: 50%;
+            animation: typing 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-4px); }
+        }
+        
+        .doc-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+            padding: 0 20px;
+            max-width: 768px;
+            margin: 0 auto 16px;
+        }
+        
+        .doc-tag {
+            background: #40414f;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        
+        .doc-tag:hover {
+            background: #4a4b5a;
+        }
+        
+        .doc-tag.selected {
+            border-color: #19c37d;
+            background: rgba(25, 195, 125, 0.1);
+        }
+        
+        .doc-tag-remove {
+            cursor: pointer;
+            opacity: 0.6;
+        }
+        
+        .doc-tag-remove:hover {
+            opacity: 1;
+        }
+
+        .icon {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .bottom-hint {
+            text-align: center;
+            font-size: 12px;
+            color: #8e8ea0;
+            padding: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <button class="new-chat-btn" onclick="newChat()">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            新建对话
+        </button>
+        
+        <div class="chat-history" id="chatHistory">
+        </div>
+        
+        <div class="sidebar-footer">
+            <div class="sidebar-footer-item" onclick="showUploadPage()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                知识库管理
+            </div>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="chat-header">
+            <div class="model-selector">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M12 16v-4"></path>
+                    <path d="M12 8h.01"></path>
+                </svg>
+                RAG知识库助手
+            </div>
+            <div id="docCount" style="font-size: 13px; color: #8e8ea0;"></div>
+        </div>
+        
+        <div id="welcomeScreen" class="welcome-screen">
+            <div class="welcome-title">👋 有什么可以帮你的？</div>
+            <div class="welcome-suggestions">
+                <div class="suggestion-card" onclick="askSuggestion('这个文档主要讲了什么内容？')">
+                    <div class="suggestion-title">📄 总结文档</div>
+                    <div class="suggestion-desc">帮我总结已上传文档的主要内容</div>
+                </div>
+                <div class="suggestion-card" onclick="askSuggestion('文档中提到了哪些关键概念？')">
+                    <div class="suggestion-title">🔍 提取关键概念</div>
+                    <div class="suggestion-desc">从文档中提取重要的概念和术语</div>
+                </div>
+                <div class="suggestion-card" onclick="askSuggestion('根据文档内容，给我一个详细的操作指南')">
+                    <div class="suggestion-title">📋 操作指南</div>
+                    <div class="suggestion-desc">基于文档生成详细的操作步骤</div>
+                </div>
+                <div class="suggestion-card" onclick="showUploadPage()">
+                    <div class="suggestion-title">📤 上传知识</div>
+                    <div class="suggestion-desc">上传新的文档到知识库</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="chatMessages" class="chat-messages hidden">
+        </div>
+        
+        <div id="docSelector" class="doc-selector hidden">
+        </div>
+        
+        <div class="input-container">
+            <div class="input-wrapper">
+                <textarea 
+                    id="userInput" 
+                    class="input-box" 
+                    placeholder="输入你的问题..."
+                    rows="1"
+                    onkeydown="handleKeyDown(event)"
+                    oninput="autoResize(this)"
+                ></textarea>
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="bottom-hint">RAG知识库可能产生不准确的信息，请注意甄别</div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        
+        let messages = [];
+        let documents = [];
+        let selectedDocs = [];
+        let conversationId = null;
+        let isLoading = false;
+        
+        async function init() {
+            await loadDocuments();
+            loadChatHistory();
+        }
+        
+        async function loadDocuments() {
+            try {
+                const res = await fetch(`${API_BASE}/api/documents?limit=50`);
+                const data = await res.json();
+                documents = data.documents || [];
+                updateDocCount();
+                updateDocSelector();
+            } catch (e) {
+                console.error('加载文档失败:', e);
+            }
+        }
+        
+        function updateDocCount() {
+            const completed = documents.filter(d => d.status === 'completed').length;
+            document.getElementById('docCount').textContent = `知识库: ${completed} 个文档`;
+        }
+        
+        function updateDocSelector() {
+            const container = document.getElementById('docSelector');
+            const completedDocs = documents.filter(d => d.status === 'completed');
+            
+            if (completedDocs.length === 0) {
+                container.innerHTML = '<span style="color: #8e8ea0; font-size: 13px;">暂无可用文档，请先上传</span>';
+                return;
+            }
+            
+            container.innerHTML = completedDocs.map(doc => `
+                <div class="doc-tag ${selectedDocs.includes(doc.doc_id) ? 'selected' : ''}" 
+                     onclick="toggleDoc('${doc.doc_id}')">
+                    📄 ${truncate(doc.file_name, 20)}
+                </div>
+            `).join('');
+        }
+        
+        function toggleDoc(docId) {
+            const idx = selectedDocs.indexOf(docId);
+            if (idx > -1) {
+                selectedDocs.splice(idx, 1);
+            } else {
+                selectedDocs.push(docId);
+            }
+            updateDocSelector();
+        }
+        
+        function truncate(str, len) {
+            return str.length > len ? str.substring(0, len) + '...' : str;
+        }
+        
+        function newChat() {
+            messages = [];
+            conversationId = null;
+            document.getElementById('chatMessages').innerHTML = '';
+            document.getElementById('chatMessages').classList.add('hidden');
+            document.getElementById('docSelector').classList.add('hidden');
+            document.getElementById('welcomeScreen').classList.remove('hidden');
+            selectedDocs = [];
+            updateDocSelector();
+        }
+        
+        function askSuggestion(text) {
+            document.getElementById('userInput').value = text;
+            sendMessage();
+        }
+        
+        function handleKeyDown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+        
+        function autoResize(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+        }
+        
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const query = input.value.trim();
+            
+            if (!query || isLoading) return;
+            
+            input.value = '';
+            input.style.height = 'auto';
+            
+            document.getElementById('welcomeScreen').classList.add('hidden');
+            document.getElementById('chatMessages').classList.remove('hidden');
+            document.getElementById('docSelector').classList.remove('hidden');
+            
+            addMessage('user', query);
+            
+            isLoading = true;
+            document.getElementById('sendBtn').disabled = true;
+            showTypingIndicator();
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: query,
+                        doc_ids: selectedDocs.length > 0 ? selectedDocs : null,
+                        top_k: 5,
+                        use_rerank: true,
+                        conversation_id: conversationId
+                    })
+                });
+                
+                const data = await res.json();
+                conversationId = data.conversation_id;
+                
+                hideTypingIndicator();
+                addMessage('assistant', data.answer, data.sources);
+                
+                saveChatHistory();
+            } catch (e) {
+                hideTypingIndicator();
+                addMessage('assistant', '抱歉，发生了错误: ' + e.message);
+            } finally {
+                isLoading = false;
+                document.getElementById('sendBtn').disabled = false;
+            }
+        }
+        
+        function addMessage(role, content, sources = null) {
+            messages.push({ role, content, sources });
+            
+            const container = document.getElementById('chatMessages');
+            const wrapper = document.createElement('div');
+            wrapper.className = `message-wrapper ${role}`;
+            
+            const avatar = role === 'user' ? '👤' : '🤖';
+            
+            let sourcesHtml = '';
+            if (sources && sources.length > 0) {
+                sourcesHtml = `
+                    <div class="sources-section">
+                        <div class="sources-title">📚 参考来源 (${sources.length})</div>
+                        ${sources.map(s => `
+                            <div class="source-item">
+                                <div class="source-file">📄 ${s.file_name || '来源文档'} ${s.page_number ? `第${s.page_number}页` : ''}</div>
+                                <div class="source-text">${escapeHtml(s.text)}</div>
+                                <div class="source-score">相似度: ${(s.similarity * 100).toFixed(1)}%</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            wrapper.innerHTML = `
+                <div class="message">
+                    <div class="message-avatar ${role}">${avatar}</div>
+                    <div class="message-content">
+                        ${escapeHtml(content).replace(/\n/g, '<br>')}
+                        ${sourcesHtml}
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function showTypingIndicator() {
+            const container = document.getElementById('chatMessages');
+            const wrapper = document.createElement('div');
+            wrapper.id = 'typingIndicator';
+            wrapper.className = 'message-wrapper assistant';
+            wrapper.innerHTML = `
+                <div class="message">
+                    <div class="message-avatar assistant">🤖</div>
+                    <div class="message-content">
+                        <div class="typing-indicator">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) indicator.remove();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function saveChatHistory() {
+            const history = JSON.parse(localStorage.getItem('ragChatHistory') || '[]');
+            const item = {
+                id: conversationId || Date.now().toString(),
+                title: messages[0]?.content?.substring(0, 30) || '新对话',
+                timestamp: Date.now(),
+                messages: messages,
+                selectedDocs: selectedDocs
+            };
+            
+            const idx = history.findIndex(h => h.id === item.id);
+            if (idx > -1) {
+                history[idx] = item;
+            } else {
+                history.unshift(item);
+            }
+            
+            localStorage.setItem('ragChatHistory', JSON.stringify(history.slice(0, 20)));
+            loadChatHistory();
+        }
+        
+        function loadChatHistory() {
+            const history = JSON.parse(localStorage.getItem('ragChatHistory') || '[]');
+            const container = document.getElementById('chatHistory');
+            
+            if (history.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; color: #8e8ea0; font-size: 13px; text-align: center;">暂无历史对话</div>';
+                return;
+            }
+            
+            container.innerHTML = history.map(h => `
+                <div class="chat-history-item ${conversationId === h.id ? 'active' : ''}" onclick="loadChat('${h.id}')">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    ${truncate(h.title, 25)}
+                </div>
+            `).join('');
+        }
+        
+        function loadChat(id) {
+            const history = JSON.parse(localStorage.getItem('ragChatHistory') || '[]');
+            const chat = history.find(h => h.id === id);
+            if (!chat) return;
+            
+            conversationId = id;
+            messages = chat.messages || [];
+            selectedDocs = chat.selectedDocs || [];
+            
+            document.getElementById('welcomeScreen').classList.add('hidden');
+            document.getElementById('chatMessages').classList.remove('hidden');
+            document.getElementById('docSelector').classList.remove('hidden');
+            
+            const container = document.getElementById('chatMessages');
+            container.innerHTML = '';
+            
+            messages.forEach(msg => {
+                const wrapper = document.createElement('div');
+                wrapper.className = `message-wrapper ${msg.role}`;
+                
+                const avatar = msg.role === 'user' ? '👤' : '🤖';
+                
+                let sourcesHtml = '';
+                if (msg.sources && msg.sources.length > 0) {
+                    sourcesHtml = `
+                        <div class="sources-section">
+                            <div class="sources-title">📚 参考来源 (${msg.sources.length})</div>
+                            ${msg.sources.map(s => `
+                                <div class="source-item">
+                                    <div class="source-file">📄 ${s.file_name || '来源文档'}</div>
+                                    <div class="source-text">${escapeHtml(s.text)}</div>
+                                    <div class="source-score">相似度: ${(s.similarity * 100).toFixed(1)}%</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                wrapper.innerHTML = `
+                    <div class="message">
+                        <div class="message-avatar ${msg.role}">${avatar}</div>
+                        <div class="message-content">
+                            ${escapeHtml(msg.content).replace(/\n/g, '<br>')}
+                            ${sourcesHtml}
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(wrapper);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+            updateDocSelector();
+            loadChatHistory();
+        }
+        
+        function showUploadPage() {
+            window.location.href = 'upload.html';
+        }
+        
+        init();
+    </script>
+</body>
+</html>
