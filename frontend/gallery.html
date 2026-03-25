@@ -405,6 +405,19 @@
                 document.getElementById('chunk-count').textContent = totalChunks;
                 document.getElementById('image-count').textContent = totalImages;
                 
+                // 检查URL参数，自动展开指定文档
+                const urlParams = new URLSearchParams(window.location.search);
+                const targetDocId = urlParams.get('doc_id');
+                if (targetDocId) {
+                    setTimeout(() => {
+                        toggleDoc(targetDocId);
+                        const docCard = document.querySelector(`[data-doc-id="${targetDocId}"]`);
+                        if (docCard) {
+                            docCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }, 100);
+                }
+                
             } catch (error) {
                 console.error('加载文档失败:', error);
                 list.innerHTML = `<div class="empty-state"><h2>加载失败</h2><p>${escapeHtml(error.message)}</p></div>`;
