@@ -4,309 +4,963 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RAG知识库Agent系统</title>
-    
-    <!-- Element Plus 样式 -->
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
-    <!-- 自定义样式 -->
     <style>
+        :root {
+            --bg-start: #0f172a;
+            --bg-end: #1d4ed8;
+            --panel: rgba(248, 250, 252, 0.92);
+            --panel-strong: #ffffff;
+            --panel-soft: #eef4ff;
+            --border: rgba(148, 163, 184, 0.28);
+            --text: #14213d;
+            --muted: #64748b;
+            --accent: #0f766e;
+            --accent-soft: rgba(15, 118, 110, 0.12);
+            --session-active: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%);
+            --shadow: 0 22px 48px rgba(15, 23, 42, 0.24);
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
             min-height: 100vh;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(125, 211, 252, 0.22), transparent 28%),
+                radial-gradient(circle at top right, rgba(134, 239, 172, 0.18), transparent 22%),
+                linear-gradient(135deg, var(--bg-start) 0%, #1e3a8a 48%, var(--bg-end) 100%);
         }
-        
+
         #app {
-            max-width: 1400px;
+            max-width: 1680px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 18px;
         }
-        
-        .main-container {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+
+        .main-shell {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 26px;
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(18px);
+            box-shadow: var(--shadow);
             overflow: hidden;
         }
-        
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 24px 32px;
-        }
-        
-        .header h1 {
-            font-size: 28px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
-        }
-        
-        .content {
+
+        .topbar {
             display: flex;
-            min-height: 600px;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 24px 28px;
+            color: #eff6ff;
+            background:
+                linear-gradient(135deg, rgba(15, 23, 42, 0.75), rgba(15, 118, 110, 0.44)),
+                linear-gradient(120deg, rgba(59, 130, 246, 0.4), rgba(8, 145, 178, 0.28));
         }
-        
-        .sidebar {
-            width: 320px;
-            border-right: 1px solid #e8e8e8;
-            padding: 20px;
-            background: #fafafa;
+
+        .topbar-title h1 {
+            font-size: 28px;
+            line-height: 1.1;
+            margin-bottom: 8px;
+            letter-spacing: 0.02em;
         }
-        
-        .main-area {
-            flex: 1;
-            padding: 20px;
+
+        .topbar-title p {
+            font-size: 14px;
+            opacity: 0.92;
+        }
+
+        .topbar-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .meta-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            font-size: 13px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 280px minmax(0, 1fr) 360px;
+            min-height: calc(100vh - 120px);
+        }
+
+        .session-sidebar,
+        .doc-sidebar {
+            padding: 18px;
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .session-sidebar {
+            border-right: 1px solid var(--border);
+        }
+
+        .doc-sidebar {
+            border-left: 1px solid var(--border);
+        }
+
+        .chat-panel {
             display: flex;
             flex-direction: column;
+            min-width: 0;
+            padding: 18px 20px 20px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.32));
         }
-        
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .section-subtitle {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .session-new-btn {
+            width: 100%;
+            margin-bottom: 14px;
+        }
+
+        .session-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .session-item {
+            position: relative;
+            padding: 14px 14px 12px;
+            border-radius: 18px;
+            background: var(--panel);
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .session-item:hover {
+            transform: translateY(-1px);
+            border-color: rgba(59, 130, 246, 0.2);
+            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+        }
+
+        .session-item.active {
+            background: var(--session-active);
+            border-color: rgba(59, 130, 246, 0.22);
+        }
+
+        .session-title-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .session-title-text {
+            font-size: 14px;
+            font-weight: 700;
+            line-height: 1.4;
+            color: #0f172a;
+            word-break: break-word;
+        }
+
+        .session-preview {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.45;
+            min-height: 34px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .session-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .session-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: rgba(15, 118, 110, 0.1);
+            color: #0f766e;
+        }
+
+        .chat-stage {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1;
+        }
+
+        .chat-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 16px 18px;
+            margin-bottom: 14px;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+        }
+
+        .chat-title {
+            min-width: 0;
+        }
+
+        .chat-title h2 {
+            font-size: 18px;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .chat-title p {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .chat-summary {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .chat-summary-card {
+            min-width: 92px;
+            padding: 10px 12px;
+            border-radius: 16px;
+            background: rgba(239, 246, 255, 0.95);
+            border: 1px solid rgba(191, 219, 254, 0.7);
+            text-align: center;
+        }
+
+        .chat-summary-value {
+            display: block;
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .chat-summary-label {
+            font-size: 11px;
+            color: var(--muted);
+        }
+
         .chat-container {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
-            padding: 16px;
-            background: #f5f7fa;
-            border-radius: 12px;
-            margin-bottom: 16px;
+            padding: 22px;
+            border-radius: 26px;
+            background:
+                radial-gradient(circle at top left, rgba(191, 219, 254, 0.32), transparent 24%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.76));
+            border: 1px solid rgba(226, 232, 240, 0.92);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
         }
-        
+
+        .welcome-state {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 80px 0;
+            text-align: center;
+            color: var(--muted);
+        }
+
+        .welcome-state h3 {
+            font-size: 28px;
+            color: #0f172a;
+            margin-bottom: 14px;
+        }
+
+        .welcome-state p {
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .welcome-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .welcome-card {
+            text-align: left;
+            padding: 18px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(191, 219, 254, 0.55);
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .welcome-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+        }
+
+        .welcome-card strong {
+            display: block;
+            margin-bottom: 6px;
+            color: #0f172a;
+        }
+
         .message {
-            margin-bottom: 16px;
-            animation: fadeIn 0.3s ease;
+            margin-bottom: 18px;
+            animation: fadeIn 0.28s ease;
         }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
+
         .message-user {
             text-align: right;
         }
-        
-        .message-user .bubble {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 16px 16px 4px 16px;
-        }
-        
-        .message-assistant .bubble {
-            background: white;
-            border-radius: 16px 16px 16px 4px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        
+
         .bubble {
-            display: inline-block;
-            padding: 12px 16px;
-            max-width: 80%;
+            display: inline-flex;
+            flex-direction: column;
+            max-width: min(82%, 880px);
+            padding: 16px 18px;
             text-align: left;
-            line-height: 1.6;
+            border-radius: 22px;
+            line-height: 1.68;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .message-user .bubble {
+            background: linear-gradient(135deg, #1d4ed8 0%, #0f766e 100%);
+            color: #eff6ff;
+            border-bottom-right-radius: 8px;
+            box-shadow: 0 14px 30px rgba(37, 99, 235, 0.22);
+        }
+
+        .message-assistant .bubble {
+            background: rgba(255, 255, 255, 0.96);
+            color: #1e293b;
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            border-bottom-left-radius: 8px;
+            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+        }
+
+        .reasoning-block {
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: #f1f5f9;
+            border-left: 3px solid #94a3b8;
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
         }
 
         .assistant-answer {
             white-space: pre-wrap;
         }
 
-        .reasoning-block {
-            margin-top: 10px;
-            padding: 10px 12px;
-            border-left: 3px solid #c8ccd4;
-            background: #f3f5f8;
-            border-radius: 8px;
-            color: #6f7785;
-            font-size: 13px;
-            line-height: 1.6;
-            white-space: pre-wrap;
+        .sources-wrap {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(226, 232, 240, 0.9);
         }
-        
-        .input-area {
+
+        .sources-head {
             display: flex;
-            gap: 12px;
-        }
-        
-        .upload-area {
-            margin-bottom: 20px;
-        }
-        
-        .document-item {
-            padding: 12px;
-            background: white;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: 1px solid #e8e8e8;
-        }
-        
-        .document-item:hover {
-            border-color: #667eea;
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-        }
-        
-        .document-item.selected {
-            border-color: #667eea;
-            background: #f0f3ff;
-        }
-        
-        .doc-header {
-            display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .source-card {
+            padding: 12px 13px;
+            border-radius: 16px;
+            background: var(--panel-soft);
+            border: 1px solid rgba(191, 219, 254, 0.55);
+            margin-bottom: 10px;
+        }
+
+        .source-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 5px;
+        }
+
+        .source-text {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.55;
+            margin-bottom: 8px;
+        }
+
+        .source-score {
+            font-size: 11px;
+            color: #0f766e;
+        }
+
+        .typing-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+        }
+
+        .typing-dots {
+            display: inline-flex;
+            gap: 5px;
+        }
+
+        .typing-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #0f766e;
+            animation: blink 1.2s infinite ease-in-out;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        @keyframes blink {
+            0%, 80%, 100% {
+                opacity: 0.3;
+                transform: translateY(0);
+            }
+            40% {
+                opacity: 1;
+                transform: translateY(-3px);
+            }
+        }
+
+        .composer {
+            margin-top: 14px;
+            padding: 14px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.86);
+            border: 1px solid rgba(226, 232, 240, 0.95);
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.1);
+        }
+
+        .composer-hint {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .doc-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .stats-card {
+            padding: 14px 12px;
+            border-radius: 18px;
+            background: var(--panel-strong);
+            border: 1px solid rgba(226, 232, 240, 0.92);
+            text-align: center;
+            box-shadow: 0 12px 22px rgba(15, 23, 42, 0.05);
+        }
+
+        .stats-card strong {
+            display: block;
+            font-size: 22px;
+            color: #0f172a;
             margin-bottom: 4px;
         }
-        
-        .doc-name {
-            font-weight: 500;
-            word-break: break-all;
-            flex: 1;
+
+        .stats-card span {
+            font-size: 11px;
+            color: var(--muted);
         }
-        
+
+        .upload-panel,
+        .doc-panel {
+            padding: 14px;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(226, 232, 240, 0.92);
+            box-shadow: 0 12px 22px rgba(15, 23, 42, 0.05);
+        }
+
+        .upload-panel {
+            margin-bottom: 14px;
+        }
+
+        .selection-strip {
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            border-radius: 18px;
+            background: var(--accent-soft);
+            color: #0f766e;
+            font-size: 13px;
+        }
+
+        .doc-list {
+            max-height: calc(100vh - 430px);
+            overflow-y: auto;
+            padding-right: 2px;
+        }
+
+        .document-item {
+            padding: 13px;
+            border-radius: 18px;
+            background: #ffffff;
+            border: 1px solid rgba(226, 232, 240, 0.92);
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .document-item:hover {
+            transform: translateY(-1px);
+            border-color: rgba(59, 130, 246, 0.24);
+            box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+        }
+
+        .document-item.selected {
+            background: linear-gradient(135deg, rgba(219, 234, 254, 0.76), rgba(240, 249, 255, 0.92));
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+
+        .doc-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .doc-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.45;
+        }
+
         .doc-actions {
             display: flex;
             gap: 4px;
+            flex-shrink: 0;
             opacity: 0;
-            transition: opacity 0.2s;
+            transition: opacity 0.18s ease;
         }
-        
+
         .document-item:hover .doc-actions {
             opacity: 1;
         }
-        
+
         .doc-meta {
             font-size: 12px;
-            color: #999;
+            color: var(--muted);
+            line-height: 1.6;
         }
-        
+
         .status-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            margin-top: 6px;
+            padding: 4px 8px;
+            border-radius: 999px;
             font-size: 11px;
-            margin-left: 8px;
+            font-weight: 700;
         }
-        
-        .status-completed { background: #e6f7e6; color: #52c41a; }
-        .status-processing { background: #fff7e6; color: #fa8c16; }
-        .status-pending { background: #f0f0f0; color: #999; }
-        .status-failed { background: #fff1f0; color: #ff4d4f; }
-        
-        .source-card {
-            margin-top: 12px;
-            padding: 12px;
-            background: #f9f9f9;
-            border-radius: 8px;
-            border-left: 3px solid #667eea;
+
+        .status-completed {
+            background: rgba(34, 197, 94, 0.12);
+            color: #15803d;
         }
-        
-        .source-title {
-            font-weight: 500;
-            margin-bottom: 4px;
-            color: #333;
+
+        .status-processing {
+            background: rgba(245, 158, 11, 0.12);
+            color: #b45309;
         }
-        
-        .source-text {
-            font-size: 13px;
-            color: #666;
-            line-height: 1.5;
+
+        .status-pending {
+            background: rgba(148, 163, 184, 0.12);
+            color: #475569;
         }
-        
-        .similarity-score {
-            font-size: 12px;
-            color: #667eea;
-            margin-top: 4px;
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.12);
+            color: #b91c1c;
         }
-        
-        .stats-cards {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 16px;
-            border-radius: 8px;
+
+        .empty-box {
+            padding: 18px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px dashed rgba(148, 163, 184, 0.4);
             text-align: center;
-            border: 1px solid #e8e8e8;
+            color: var(--muted);
+            font-size: 13px;
         }
-        
-        .stat-value {
-            font-size: 28px;
-            font-weight: 600;
-            color: #667eea;
+
+        @media (max-width: 1360px) {
+            .layout {
+                grid-template-columns: 250px minmax(0, 1fr) 320px;
+            }
         }
-        
-        .stat-label {
-            font-size: 12px;
-            color: #999;
-            margin-top: 4px;
+
+        @media (max-width: 1120px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+
+            .session-sidebar,
+            .doc-sidebar {
+                border: none;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .doc-sidebar {
+                border-bottom: none;
+                border-top: 1px solid var(--border);
+            }
+
+            .doc-list {
+                max-height: none;
+            }
         }
-        
-        .loading-dots {
-            display: inline-block;
-        }
-        
-        .loading-dots span {
-            animation: dots 1.4s infinite;
-            animation-fill-mode: both;
-        }
-        
-        .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-        
-        @keyframes dots {
-            0%, 80%, 100% { opacity: 0; }
-            40% { opacity: 1; }
+
+        @media (max-width: 720px) {
+            #app {
+                padding: 10px;
+            }
+
+            .topbar {
+                padding: 18px;
+            }
+
+            .topbar-title h1 {
+                font-size: 22px;
+            }
+
+            .topbar-meta {
+                justify-content: flex-start;
+            }
+
+            .chat-head {
+                padding: 14px;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .chat-summary {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .welcome-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .bubble {
+                max-width: 100%;
+            }
         }
     </style>
 </head>
 <body>
     <div id="app">
-        <div class="main-container">
-            <!-- 头部 -->
-            <div class="header" style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h1>🤖 RAG知识库Agent系统</h1>
-                    <p>基于LlamaIndex的智能问答系统 - 上传文档，开始对话</p>
+        <div class="main-shell">
+            <div class="topbar">
+                <div class="topbar-title">
+                    <h1>RAG知识库Agent系统</h1>
+                    <p>左侧管理会话，中间专注对话，右侧维护知识库文档。</p>
                 </div>
-                <el-button type="warning" @click="goToDocDetail" size="large">
-                    📋 文档详情
-                </el-button>
+                <div class="topbar-meta">
+                    <div class="meta-pill">
+                        <span>当前会话</span>
+                        <strong>{{ currentSessionTitle }}</strong>
+                    </div>
+                    <div class="meta-pill">
+                        <span>已选文档</span>
+                        <strong>{{ selectedDocs.length }}</strong>
+                    </div>
+                    <el-button type="warning" @click="goToDocDetail" size="large">
+                        文档详情
+                    </el-button>
+                </div>
             </div>
-            
-            <!-- 主内容区 -->
-            <div class="content">
-                <!-- 左侧边栏 - 文档管理 -->
-                <div class="sidebar">
-                    <!-- 统计卡片 -->
-                    <div class="stats-cards">
-                        <div class="stat-card">
-                            <div class="stat-value">{{ stats.total_documents }}</div>
-                            <div class="stat-label">文档数</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">{{ stats.total_chunks }}</div>
-                            <div class="stat-label">文本块</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-value">{{ stats.total_images }}</div>
-                            <div class="stat-label">图片数</div>
+
+            <div class="layout">
+                <aside class="session-sidebar">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">会话管理</div>
+                            <div class="section-subtitle">刷新页面后会自动恢复上次会话</div>
                         </div>
                     </div>
-                    
-                    <!-- 上传区域 -->
-                    <div class="upload-area">
+
+                    <el-button
+                        class="session-new-btn"
+                        type="primary"
+                        size="large"
+                        :icon="Plus"
+                        @click="createSession()"
+                        :disabled="loading"
+                    >
+                        新建会话
+                    </el-button>
+
+                    <div v-if="sessions.length === 0" class="empty-box">
+                        暂无会话，点击上方按钮开始一个新会话。
+                    </div>
+
+                    <div v-else class="session-list">
+                        <div
+                            v-for="session in sessions"
+                            :key="session.id"
+                            class="session-item"
+                            :class="{ active: currentSessionId === session.id }"
+                            @click="activateSession(session.id)"
+                        >
+                            <div class="session-title-row">
+                                <div class="session-title-text">{{ session.title || '新对话' }}</div>
+                                <el-button
+                                    size="small"
+                                    :icon="Delete"
+                                    circle
+                                    text
+                                    @click.stop="removeSession(session.id)"
+                                    :disabled="loading && currentSessionId === session.id"
+                                />
+                            </div>
+                            <div class="session-preview">{{ getSessionPreview(session) }}</div>
+                            <div class="session-footer">
+                                <span>{{ formatRelativeTime(session.updatedAt) }}</span>
+                                <span class="session-badge">
+                                    {{ (session.messages || []).length }} 条消息
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <main class="chat-panel">
+                    <div class="chat-stage">
+                        <div class="chat-head">
+                            <div class="chat-title">
+                                <h2>{{ currentSessionTitle }}</h2>
+                                <p>{{ conversationId ? `会话ID: ${conversationId}` : '新会话，发送第一条消息后会生成会话ID' }}</p>
+                            </div>
+                            <div class="chat-summary">
+                                <div class="chat-summary-card">
+                                    <span class="chat-summary-value">{{ messages.length }}</span>
+                                    <span class="chat-summary-label">消息数</span>
+                                </div>
+                                <div class="chat-summary-card">
+                                    <span class="chat-summary-value">{{ completedDocumentsCount }}</span>
+                                    <span class="chat-summary-label">可用文档</span>
+                                </div>
+                                <div class="chat-summary-card">
+                                    <span class="chat-summary-value">{{ selectedDocs.length }}</span>
+                                    <span class="chat-summary-label">已选知识</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="chat-container" ref="chatContainer">
+                            <div v-if="messages.length === 0" class="welcome-state">
+                                <h3>开始一个稳定保存的会话</h3>
+                                <p>会话记录会保存在浏览器本地，刷新页面后继续从原来的对话接着聊。</p>
+                                <div class="welcome-grid">
+                                    <div class="welcome-card" @click="fillSuggestion('帮我总结当前知识库里都有哪些文档和主题')">
+                                        <strong>总结知识库</strong>
+                                        <span>快速梳理当前已上传文档与主题范围。</span>
+                                    </div>
+                                    <div class="welcome-card" @click="fillSuggestion('请从已选文档中提取关键配置项')">
+                                        <strong>提取配置项</strong>
+                                        <span>从已选文档中提炼参数、字段和操作入口。</span>
+                                    </div>
+                                    <div class="welcome-card" @click="fillSuggestion('请给我一份详细操作步骤，并标注来源')">
+                                        <strong>生成操作步骤</strong>
+                                        <span>基于知识库内容输出可执行的步骤清单。</span>
+                                    </div>
+                                    <div class="welcome-card" @click="fillSuggestion('请对比不同系统接入方式的差异')">
+                                        <strong>做差异对比</strong>
+                                        <span>横向比较 Zoom、Outlook、钉钉等不同文档内容。</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                v-for="(msg, index) in messages"
+                                :key="msg.id || index"
+                                class="message"
+                                :class="'message-' + msg.role"
+                            >
+                                <div class="bubble">
+                                    <template v-if="msg.role === 'user'">
+                                        <div>{{ msg.content }}</div>
+                                    </template>
+                                    <template v-else>
+                                        <div
+                                            v-for="(reason, reasonIdx) in getAssistantReasonings(msg)"
+                                            :key="`reason-${index}-${reasonIdx}`"
+                                            class="reasoning-block"
+                                        >
+                                            {{ reason }}
+                                        </div>
+                                        <div class="assistant-answer">{{ getAssistantAnswer(msg) }}</div>
+
+                                        <div v-if="msg.sources && msg.sources.length > 0" class="sources-wrap">
+                                            <div class="sources-head">
+                                                <span>参考来源</span>
+                                                <span>{{ msg.sources.length }} 条</span>
+                                            </div>
+                                            <div
+                                                v-for="(source, sourceIdx) in msg.sources"
+                                                :key="`source-${index}-${sourceIdx}`"
+                                                class="source-card"
+                                            >
+                                                <div class="source-title">
+                                                    {{ source.file_name || '来源文档' }}
+                                                    <span v-if="source.page_number"> · 第 {{ source.page_number }} 页</span>
+                                                </div>
+                                                <div class="source-text">{{ source.text }}</div>
+                                                <div class="source-score">相似度 {{ ((source.similarity || 0) * 100).toFixed(1) }}%</div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <div v-if="loading && !streamStarted" class="message message-assistant">
+                                <div class="typing-row">
+                                    <span>正在连接模型</span>
+                                    <div class="typing-dots">
+                                        <span></span>
+                                        <span></span>
+                                        <span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="composer">
+                        <div class="input-area">
+                            <el-input
+                                v-model="userInput"
+                                type="textarea"
+                                :rows="2"
+                                resize="none"
+                                placeholder="输入你的问题..."
+                                :disabled="loading"
+                                @keydown.enter.exact.prevent="sendMessage"
+                            />
+                            <el-button
+                                type="primary"
+                                size="large"
+                                :icon="Promotion"
+                                :loading="loading"
+                                @click="sendMessage"
+                            >
+                                发送
+                            </el-button>
+                        </div>
+                        <div class="composer-hint">思考内容会显示在回答上方；如果模型走 `reasoningContent` 也会按同样方式展示。</div>
+                    </div>
+                </main>
+
+                <aside class="doc-sidebar">
+                    <div class="section-header">
+                        <div>
+                            <div class="section-title">文档管理</div>
+                            <div class="section-subtitle">上传、选择、重命名和删除知识库文档</div>
+                        </div>
+                        <el-button size="small" :icon="RefreshRight" circle @click="refreshKnowledgePane" />
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stats-card">
+                            <strong>{{ stats.total_documents }}</strong>
+                            <span>文档数</span>
+                        </div>
+                        <div class="stats-card">
+                            <strong>{{ stats.total_chunks }}</strong>
+                            <span>文本块</span>
+                        </div>
+                        <div class="stats-card">
+                            <strong>{{ stats.total_images }}</strong>
+                            <span>图片数</span>
+                        </div>
+                    </div>
+
+                    <div class="upload-panel">
+                        <div class="section-header" style="margin-bottom: 10px;">
+                            <div>
+                                <div class="section-title">上传文档</div>
+                                <div class="section-subtitle">支持 PDF、Word、HTML、Markdown、TXT</div>
+                            </div>
+                        </div>
                         <el-upload
                             :action="apiBase + '/api/documents/upload'"
                             :headers="uploadHeaders"
@@ -316,251 +970,244 @@
                             :show-file-list="false"
                             drag
                         >
-                            <el-icon size="40" color="#667eea"><upload-filled /></el-icon>
-                            <div style="margin-top: 8px;">点击或拖拽上传文档</div>
-                            <div style="font-size: 12px; color: #999; margin-top: 4px;">
-                                支持 PDF、Word、HTML、Markdown
-                            </div>
+                            <el-icon size="42" color="#0f766e"><upload-filled /></el-icon>
+                            <div style="margin-top: 10px; font-size: 14px; color: #0f172a;">点击或拖拽上传文档</div>
+                            <div style="margin-top: 6px; font-size: 12px; color: #64748b;">上传完成后会自动进入处理流程</div>
                         </el-upload>
                     </div>
-                    
-                    <!-- 知识库选择 -->
-                    <div style="margin-bottom: 12px;">
-                        <el-select v-model="selectedKb" placeholder="选择知识库" size="default" style="width: 100%;" @change="onKbChange">
-                            <el-option label="默认知识库" value="default" />
-                            <el-option label="+ 新建知识库" value="__new__" />
-                        </el-select>
-                    </div>
 
-                    <!-- 新建知识库对话框 -->
-                    <el-dialog v-model="newKbDialogVisible" title="新建知识库" width="400px">
-                        <el-input v-model="newKbName" placeholder="请输入知识库名称" />
-                        <template #footer>
-                            <el-button @click="newKbDialogVisible = false">取消</el-button>
-                            <el-button type="primary" @click="createKnowledgeBase" :loading="creatingKb">创建</el-button>
-                        </template>
-                    </el-dialog>
+                    <div class="doc-panel">
+                        <div class="selection-strip">
+                            当前会话已选 {{ selectedDocs.length }} 个文档，选择结果会跟随会话一起保存。
+                        </div>
 
-                    <!-- 文档列表 -->
-                    <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 500;">文档列表</span>
-                        <el-button size="small" @click="loadDocuments" :icon="RefreshRight" circle />
-                    </div>
-                    
-                    <div style="max-height: 300px; overflow-y: auto;">
-                        <div 
-                            v-for="doc in documents" 
-                            :key="doc.doc_id"
-                            class="document-item"
-                            :class="{ selected: selectedDocs.includes(doc.doc_id) }"
-                        >
-                            <div class="doc-header">
-                                <div class="doc-name" @click="showDocDetail(doc)">
-                                    {{ doc.file_name }}
-                                    <span
-                                        class="status-badge"
-                                        :class="'status-' + doc.status"
-                                    >
-                                        {{ statusText(doc.status) }}
-                                    </span>
-                                </div>
-                                <div class="doc-actions">
-                                    <el-button 
-                                        size="small" 
-                                        :icon="Edit" 
-                                        circle 
-                                        @click.stop="showRenameDialog(doc)"
-                                        title="重命名"
-                                    />
-                                    <el-popconfirm
-                                        title="确定要删除此文档吗？"
-                                        confirm-button-text="删除"
-                                        cancel-button-text="取消"
-                                        @confirm="deleteDocument(doc.doc_id)"
-                                    >
-                                        <template #reference>
-                                            <el-button 
-                                                size="small" 
-                                                :icon="Delete" 
-                                                circle 
-                                                type="danger"
-                                                @click.stop
-                                                title="删除"
-                                            />
-                                        </template>
-                                    </el-popconfirm>
-                                </div>
-                            </div>
-                            <div class="doc-meta" @click="toggleDocSelection(doc.doc_id)">
-                                {{ formatSize(doc.file_size) }} · 
-                                {{ doc.total_chunks }} 个文本块 ·
-                                {{ formatDate(doc.created_at) }}
-                            </div>
+                        <div class="doc-toolbar">
+                            <span class="section-title">文档列表</span>
+                            <el-select
+                                v-model="selectedKb"
+                                placeholder="选择知识库"
+                                size="small"
+                                style="width: 132px;"
+                                @change="onKbChange"
+                            >
+                                <el-option label="默认知识库" value="default" />
+                                <el-option label="+ 新建知识库" value="__new__" />
+                            </el-select>
                         </div>
-                        
-                        <el-empty v-if="documents.length === 0" description="暂无文档" :image-size="60" />
-                    </div>
-                    
-                    <!-- 重命名对话框 -->
-                    <el-dialog v-model="renameDialogVisible" title="重命名文档" width="400px">
-                        <el-input
-                            v-model="newFileName"
-                            placeholder="请输入新的文件名"
-                            @keyup.enter="renameDocument"
-                        />
-                        <template #footer>
-                            <el-button @click="renameDialogVisible = false">取消</el-button>
-                            <el-button type="primary" @click="renameDocument" :loading="renameLoading">
-                                确定
-                            </el-button>
-                        </template>
-                    </el-dialog>
 
-                    <!-- 文档详情对话框 -->
-                    <el-dialog v-model="detailDialogVisible" title="文档详情" width="600px">
-                        <div v-if="currentDoc" style="line-height: 1.8;">
-                            <el-descriptions :column="1" border>
-                                <el-descriptions-item label="文件名">
-                                    {{ currentDoc.file_name }}
-                                </el-descriptions-item>
-                                <el-descriptions-item label="状态">
-                                    <el-tag :type="currentDoc.status === 'completed' ? 'success' : currentDoc.status === 'failed' ? 'danger' : 'warning'">
-                                        {{ statusText(currentDoc.status) }}
-                                    </el-tag>
-                                </el-descriptions-item>
-                                <el-descriptions-item label="文件大小">
-                                    {{ formatSize(currentDoc.file_size) }}
-                                </el-descriptions-item>
-                                <el-descriptions-item label="文本块数">
-                                    {{ currentDoc.total_chunks }}
-                                </el-descriptions-item>
-                                <el-descriptions-item label="图片数">
-                                    {{ currentDoc.total_images || 0 }}
-                                </el-descriptions-item>
-                                <el-descriptions-item label="创建时间">
-                                    {{ formatDateTime(currentDoc.created_at) }}
-                                </el-descriptions-item>
-                                <el-descriptions-item label="文档ID">
-                                    <el-tag size="small">{{ currentDoc.doc_id }}</el-tag>
-                                </el-descriptions-item>
-                            </el-descriptions>
+                        <div v-if="documents.length === 0" class="empty-box">
+                            暂无文档，先上传一份知识文档开始使用。
                         </div>
-                        <template #footer>
-                            <el-button @click="detailDialogVisible = false">关闭</el-button>
-                            <el-button type="primary" @click="toggleDocSelection(currentDoc.doc_id); detailDialogVisible = false" v-if="currentDoc">
-                                {{ selectedDocs.includes(currentDoc.doc_id) ? '取消选中' : '选中该文档' }}
-                            </el-button>
-                        </template>
-                    </el-dialog>
-                </div>
-                
-                <!-- 右侧主区域 - 对话 -->
-                <div class="main-area">
-                    <!-- 对话区域 -->
-                    <div class="chat-container" ref="chatContainer">
-                        <div v-if="messages.length === 0" style="text-align: center; padding: 60px 20px; color: #999;">
-                            <el-icon size="60" color="#ddd"><chat-dot-round /></el-icon>
-                            <div style="margin-top: 16px; font-size: 16px;">开始对话</div>
-                            <div style="margin-top: 8px; font-size: 13px;">
-                                上传文档后，输入问题开始智能问答
-                            </div>
-                        </div>
-                        
-                        <div 
-                            v-for="(msg, index) in messages" 
-                            :key="index"
-                            class="message"
-                            :class="'message-' + msg.role"
-                        >
-                            <div class="bubble">
-                                <div v-if="msg.role === 'user'">{{ msg.content }}</div>
-                                <div v-else>
-                                    <div class="assistant-answer">{{ getAssistantAnswer(msg) }}</div>
-                                    <div
-                                        v-for="(reason, reasonIdx) in getAssistantReasonings(msg)"
-                                        :key="`reason-${index}-${reasonIdx}`"
-                                        class="reasoning-block"
-                                    >
-                                        {{ reason }}
-                                    </div>
-                                    
-                                    <!-- 来源展示 -->
-                                    <div v-if="msg.sources && msg.sources.length > 0">
-                                        <div 
-                                            v-for="(source, sIdx) in msg.sources" 
-                                            :key="sIdx"
-                                            class="source-card"
-                                        >
-                                            <div class="source-title">
-                                                📄 {{ source.file_name || '来源文档' }}
-                                                <span v-if="source.page_number">第 {{ source.page_number }} 页</span>
-                                            </div>
-                                            <div class="source-text">{{ source.text }}</div>
-                                            <div class="similarity-score">
-                                                相似度: {{ (source.similarity * 100).toFixed(1) }}%
-                                            </div>
+
+                        <div v-else class="doc-list">
+                            <div
+                                v-for="doc in documents"
+                                :key="doc.doc_id"
+                                class="document-item"
+                                :class="{ selected: selectedDocs.includes(doc.doc_id) }"
+                                @click="toggleDocSelection(doc.doc_id)"
+                            >
+                                <div class="doc-header">
+                                    <div style="min-width: 0;">
+                                        <div class="doc-name">{{ doc.file_name }}</div>
+                                        <div class="status-badge" :class="'status-' + doc.status">
+                                            {{ statusText(doc.status) }}
                                         </div>
                                     </div>
+                                    <div class="doc-actions">
+                                        <el-button
+                                            size="small"
+                                            :icon="View"
+                                            circle
+                                            text
+                                            @click.stop="showDocDetail(doc)"
+                                        />
+                                        <el-button
+                                            size="small"
+                                            :icon="Edit"
+                                            circle
+                                            text
+                                            @click.stop="showRenameDialog(doc)"
+                                        />
+                                        <el-popconfirm
+                                            title="确定要删除此文档吗？"
+                                            confirm-button-text="删除"
+                                            cancel-button-text="取消"
+                                            @confirm="deleteDocument(doc.doc_id)"
+                                        >
+                                            <template #reference>
+                                                <el-button
+                                                    size="small"
+                                                    :icon="Delete"
+                                                    circle
+                                                    text
+                                                    type="danger"
+                                                    @click.stop
+                                                />
+                                            </template>
+                                        </el-popconfirm>
+                                    </div>
+                                </div>
+                                <div class="doc-meta">
+                                    {{ formatSize(doc.file_size) }} · {{ doc.total_chunks }} 个文本块 · {{ formatDate(doc.created_at) }}
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- 加载中 -->
-                        <div v-if="loading && !streamStarted" class="message message-assistant">
-                            <div class="bubble">
-                                <span class="loading-dots">
-                                    思考中<span>.</span><span>.</span><span>.</span>
-                                </span>
-                            </div>
-                        </div>
                     </div>
-                    
-                    <!-- 输入区域 -->
-                    <div class="input-area">
-                        <el-input
-                            v-model="userInput"
-                            placeholder="输入你的问题..."
-                            size="large"
-                            @keyup.enter="sendMessage"
-                            :disabled="loading"
-                        >
-                            <template #prefix>
-                                <el-icon><edit-pen /></el-icon>
-                            </template>
-                        </el-input>
-                        <el-button 
-                            type="primary" 
-                            size="large" 
-                            @click="sendMessage"
-                            :loading="loading"
-                            :icon="Promotion"
-                        >
-                            发送
-                        </el-button>
-                    </div>
-                </div>
+                </aside>
             </div>
         </div>
+
+        <el-dialog v-model="newKbDialogVisible" title="新建知识库" width="400px">
+            <el-input v-model="newKbName" placeholder="请输入知识库名称" />
+            <template #footer>
+                <el-button @click="newKbDialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="createKnowledgeBase" :loading="creatingKb">创建</el-button>
+            </template>
+        </el-dialog>
+
+        <el-dialog v-model="renameDialogVisible" title="重命名文档" width="420px">
+            <el-input v-model="newFileName" placeholder="请输入新的文件名" @keyup.enter="renameDocument" />
+            <template #footer>
+                <el-button @click="renameDialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="renameDocument" :loading="renameLoading">确定</el-button>
+            </template>
+        </el-dialog>
+
+        <el-dialog v-model="detailDialogVisible" title="文档详情" width="620px">
+            <div v-if="currentDoc" style="line-height: 1.85;">
+                <el-descriptions :column="1" border>
+                    <el-descriptions-item label="文件名">{{ currentDoc.file_name }}</el-descriptions-item>
+                    <el-descriptions-item label="状态">
+                        <el-tag :type="currentDoc.status === 'completed' ? 'success' : currentDoc.status === 'failed' ? 'danger' : 'warning'">
+                            {{ statusText(currentDoc.status) }}
+                        </el-tag>
+                    </el-descriptions-item>
+                    <el-descriptions-item label="文件大小">{{ formatSize(currentDoc.file_size) }}</el-descriptions-item>
+                    <el-descriptions-item label="文本块数">{{ currentDoc.total_chunks }}</el-descriptions-item>
+                    <el-descriptions-item label="图片数">{{ currentDoc.total_images || 0 }}</el-descriptions-item>
+                    <el-descriptions-item label="创建时间">{{ formatDateTime(currentDoc.created_at) }}</el-descriptions-item>
+                    <el-descriptions-item label="文档ID">
+                        <el-tag size="small">{{ currentDoc.doc_id }}</el-tag>
+                    </el-descriptions-item>
+                </el-descriptions>
+            </div>
+            <template #footer>
+                <el-button @click="detailDialogVisible = false">关闭</el-button>
+                <el-button
+                    v-if="currentDoc"
+                    type="primary"
+                    @click="toggleDocSelection(currentDoc.doc_id); detailDialogVisible = false"
+                >
+                    {{ selectedDocs.includes(currentDoc.doc_id) ? '取消选中' : '选中该文档' }}
+                </el-button>
+            </template>
+        </el-dialog>
     </div>
-    
-    <!-- Vue 3 -->
+
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-    <!-- Element Plus -->
     <script src="https://unpkg.com/element-plus"></script>
-    <!-- Element Plus Icons -->
     <script src="https://unpkg.com/@element-plus/icons-vue"></script>
-    
+
     <script>
-        const { createApp, ref, reactive, onMounted, nextTick, computed } = Vue;
-        
+        const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+
+        const STORAGE_SESSIONS_KEY = 'rag_chat_sessions_v2';
+        const STORAGE_ACTIVE_KEY = 'rag_chat_active_v2';
+
+        function safeParse(value, fallback) {
+            try {
+                return JSON.parse(value);
+            } catch (_) {
+                return fallback;
+            }
+        }
+
+        function clone(value) {
+            return JSON.parse(JSON.stringify(value));
+        }
+
+        function createSessionRecord() {
+            const now = Date.now();
+            return {
+                id: `session_${now}_${Math.random().toString(36).slice(2, 7)}`,
+                title: '新对话',
+                preview: '还没有消息',
+                createdAt: now,
+                updatedAt: now,
+                conversationId: null,
+                selectedDocs: [],
+                messages: []
+            };
+        }
+
+        function sessionTitleFromMessages(messages) {
+            const firstUser = (messages || []).find(item => item.role === 'user');
+            if (!firstUser || !firstUser.content) {
+                return '新对话';
+            }
+            const text = String(firstUser.content).replace(/\s+/g, ' ').trim();
+            return text.length > 24 ? `${text.slice(0, 24)}...` : text;
+        }
+
+        function sessionPreviewFromMessages(messages) {
+            const lastMessage = [...(messages || [])].reverse().find(item => item.content && String(item.content).trim());
+            if (!lastMessage) {
+                return '还没有消息';
+            }
+            const text = String(lastMessage.content).replace(/\s+/g, ' ').trim();
+            return text.length > 40 ? `${text.slice(0, 40)}...` : text;
+        }
+
+        function parseThinkContent(text) {
+            const raw = String(text ?? '');
+            const reasonings = [];
+            const answers = [];
+            const regex = /<think>([\s\S]*?)<\/think>/gi;
+            let cursor = 0;
+            let match;
+
+            while ((match = regex.exec(raw)) !== null) {
+                if (match.index > cursor) {
+                    answers.push(raw.slice(cursor, match.index));
+                }
+                if (match[1]) {
+                    reasonings.push(match[1]);
+                }
+                cursor = regex.lastIndex;
+            }
+
+            if (cursor < raw.length) {
+                const tail = raw.slice(cursor);
+                const openIdx = tail.indexOf('<think>');
+                if (openIdx >= 0) {
+                    answers.push(tail.slice(0, openIdx));
+                    const pending = tail.slice(openIdx + '<think>'.length);
+                    if (pending) {
+                        reasonings.push(pending);
+                    }
+                } else {
+                    answers.push(tail);
+                }
+            }
+
+            return {
+                answer: answers.join(''),
+                reasonings: reasonings
+            };
+        }
+
         const app = createApp({
             setup() {
-                // API基础地址
                 const apiBase = ref('http://localhost:8000');
-                
-                // 文档相关
-                const documents = ref([]);
+
+                const sessions = ref([]);
+                const currentSessionId = ref(null);
+                const messages = ref([]);
                 const selectedDocs = ref([]);
+                const conversationId = ref(null);
+
+                const documents = ref([]);
                 const selectedKb = ref('default');
                 const newKbDialogVisible = ref(false);
                 const newKbName = ref('');
@@ -570,19 +1217,158 @@
                     total_chunks: 0,
                     total_images: 0
                 });
-                
-                // 对话相关
-                const messages = ref([]);
+
                 const userInput = ref('');
                 const loading = ref(false);
                 const streamStarted = ref(false);
                 const chatContainer = ref(null);
-                const conversationId = ref(null);
-                
-                // 上传相关
+
+                const renameDialogVisible = ref(false);
+                const newFileName = ref('');
+                const renamingDoc = ref(null);
+                const renameLoading = ref(false);
+
+                const detailDialogVisible = ref(false);
+                const currentDoc = ref(null);
+
                 const uploadHeaders = computed(() => ({}));
-                
-                // 加载文档列表
+                const completedDocumentsCount = computed(() => documents.value.filter(doc => doc.status === 'completed').length);
+                const currentSessionTitle = computed(() => {
+                    const session = sessions.value.find(item => item.id === currentSessionId.value);
+                    return session?.title || '新对话';
+                });
+
+                const persistSessions = () => {
+                    localStorage.setItem(STORAGE_SESSIONS_KEY, JSON.stringify(sessions.value));
+                    if (currentSessionId.value) {
+                        localStorage.setItem(STORAGE_ACTIVE_KEY, currentSessionId.value);
+                    }
+                };
+
+                const sortSessions = () => {
+                    sessions.value.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+                };
+
+                const syncCurrentSession = (touch = true) => {
+                    const index = sessions.value.findIndex(item => item.id === currentSessionId.value);
+                    if (index === -1) return;
+
+                    const session = sessions.value[index];
+                    session.messages = clone(messages.value);
+                    session.selectedDocs = [...selectedDocs.value];
+                    session.conversationId = conversationId.value;
+                    session.title = sessionTitleFromMessages(messages.value);
+                    session.preview = sessionPreviewFromMessages(messages.value);
+                    if (touch) {
+                        session.updatedAt = Date.now();
+                    }
+
+                    sortSessions();
+                    persistSessions();
+                };
+
+                const applySession = (session) => {
+                    currentSessionId.value = session.id;
+                    conversationId.value = session.conversationId || null;
+                    messages.value = clone(session.messages || []);
+                    selectedDocs.value = [...(session.selectedDocs || [])];
+                    persistSessions();
+
+                    nextTick(() => {
+                        scrollToBottom();
+                    });
+                };
+
+                const createSession = () => {
+                    if (loading.value) return;
+
+                    const session = createSessionRecord();
+                    sessions.value.unshift(session);
+                    applySession(session);
+                };
+
+                const activateSession = (sessionId) => {
+                    if (loading.value || sessionId === currentSessionId.value) return;
+
+                    const session = sessions.value.find(item => item.id === sessionId);
+                    if (!session) return;
+                    applySession(session);
+                };
+
+                const removeSession = (sessionId) => {
+                    if (loading.value && currentSessionId.value === sessionId) return;
+
+                    const index = sessions.value.findIndex(item => item.id === sessionId);
+                    if (index === -1) return;
+
+                    sessions.value.splice(index, 1);
+
+                    if (currentSessionId.value === sessionId) {
+                        if (sessions.value.length > 0) {
+                            applySession(sessions.value[0]);
+                        } else {
+                            const session = createSessionRecord();
+                            sessions.value.push(session);
+                            applySession(session);
+                        }
+                    }
+
+                    sortSessions();
+                    persistSessions();
+                };
+
+                const initializeSessions = () => {
+                    const stored = safeParse(localStorage.getItem(STORAGE_SESSIONS_KEY), []);
+                    sessions.value = Array.isArray(stored) ? stored : [];
+                    sortSessions();
+
+                    if (sessions.value.length === 0) {
+                        const session = createSessionRecord();
+                        sessions.value = [session];
+                    }
+
+                    const preferredId = localStorage.getItem(STORAGE_ACTIVE_KEY);
+                    const session = sessions.value.find(item => item.id === preferredId) || sessions.value[0];
+                    applySession(session);
+                };
+
+                const getAssistantAnswer = (msg) => {
+                    const parsed = parseThinkContent(msg?.content || '');
+                    return parsed.answer;
+                };
+
+                const getAssistantReasonings = (msg) => {
+                    const parsed = parseThinkContent(msg?.content || '');
+                    const blocks = [...parsed.reasonings];
+                    if (msg?.reasoning) {
+                        blocks.push(msg.reasoning);
+                    }
+
+                    const deduped = [];
+                    const seen = new Set();
+                    for (const item of blocks) {
+                        const key = String(item || '').trim();
+                        if (!key || seen.has(key)) continue;
+                        seen.add(key);
+                        deduped.push(item);
+                    }
+                    return deduped;
+                };
+
+                const getSessionPreview = (session) => session.preview || '还没有消息';
+
+                const formatRelativeTime = (timestamp) => {
+                    if (!timestamp) return '刚刚';
+
+                    const diff = Date.now() - timestamp;
+                    if (diff < 60 * 1000) return '刚刚';
+                    if (diff < 60 * 60 * 1000) return `${Math.floor(diff / (60 * 1000))} 分钟前`;
+                    if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / (60 * 60 * 1000))} 小时前`;
+
+                    const date = new Date(timestamp);
+                    return `${date.getMonth() + 1}/${date.getDate()}`;
+                };
+
                 const loadDocuments = async () => {
                     try {
                         const response = await fetch(`${apiBase.value}/api/documents?limit=50`);
@@ -593,8 +1379,7 @@
                         ElementPlus.ElMessage.error('加载文档失败');
                     }
                 };
-                
-                // 加载统计信息
+
                 const loadStats = async () => {
                     try {
                         const response = await fetch(`${apiBase.value}/api/stats`);
@@ -605,26 +1390,15 @@
                     }
                 };
 
-                // 知识库选择变化
-                const onKbChange = (value) => {
-                    if (value === '__new__') {
-                        newKbDialogVisible.value = true;
-                        selectedKb.value = 'default';
-                    }
+                const refreshKnowledgePane = async () => {
+                    await Promise.all([loadDocuments(), loadStats()]);
                 };
 
-                // 创建知识库
-                const createKnowledgeBase = async () => {
-                    if (!newKbName.value.trim()) {
-                        ElementPlus.ElMessage.warning('请输入知识库名称');
-                        return;
-                    }
-                    ElementPlus.ElMessage.info('知识库功能开发中，敬请期待');
-                    newKbDialogVisible.value = false;
-                    newKbName.value = '';
+                const scrollToBottom = () => {
+                    if (!chatContainer.value) return;
+                    chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
                 };
 
-                // 切换文档选择
                 const toggleDocSelection = (docId) => {
                     const index = selectedDocs.value.indexOf(docId);
                     if (index > -1) {
@@ -632,96 +1406,72 @@
                     } else {
                         selectedDocs.value.push(docId);
                     }
+                    syncCurrentSession(false);
                 };
 
-                const parseThinkContent = (text) => {
-                    const raw = String(text ?? '');
-                    const thinks = [];
-                    const answerParts = [];
-                    const regex = /<think>([\s\S]*?)<\/think>/gi;
-                    let cursor = 0;
-                    let match;
+                const fillSuggestion = (text) => {
+                    userInput.value = text;
+                };
 
-                    while ((match = regex.exec(raw)) !== null) {
-                        if (match.index > cursor) {
-                            answerParts.push(raw.slice(cursor, match.index));
+                const handleStreamEvent = (assistantMessage, event) => {
+                    if (event.type === 'start') {
+                        conversationId.value = event.conversation_id || conversationId.value;
+                        return;
+                    }
+                    if (event.type === 'delta') {
+                        assistantMessage.content += event.content || '';
+                        streamStarted.value = true;
+                        scrollToBottom();
+                        return;
+                    }
+                    if (event.type === 'reasoning_delta') {
+                        assistantMessage.reasoning += event.content || '';
+                        streamStarted.value = true;
+                        scrollToBottom();
+                        return;
+                    }
+                    if (event.type === 'done') {
+                        conversationId.value = event.conversation_id || conversationId.value;
+                        assistantMessage.sources = event.sources || [];
+                        if (!assistantMessage.content) {
+                            assistantMessage.content = event.answer || '';
                         }
-                        if (match[1]) {
-                            thinks.push(match[1]);
+                        if (event.reasoning) {
+                            assistantMessage.reasoning = event.reasoning;
                         }
-                        cursor = regex.lastIndex;
+                        streamStarted.value = true;
+                        scrollToBottom();
                     }
-
-                    if (cursor < raw.length) {
-                        const tail = raw.slice(cursor);
-                        const openIdx = tail.indexOf('<think>');
-                        if (openIdx >= 0) {
-                            answerParts.push(tail.slice(0, openIdx));
-                            const pendingThink = tail.slice(openIdx + '<think>'.length);
-                            if (pendingThink) {
-                                thinks.push(pendingThink);
-                            }
-                        } else {
-                            answerParts.push(tail);
-                        }
-                    }
-
-                    return {
-                        answer: answerParts.join(''),
-                        thinks: thinks
-                    };
                 };
 
-                const getAssistantAnswer = (msg) => {
-                    const parsed = parseThinkContent(msg?.content || '');
-                    return parsed.answer;
-                };
-
-                const getAssistantReasonings = (msg) => {
-                    const parsed = parseThinkContent(msg?.content || '');
-                    const reasonings = [...parsed.thinks];
-                    if (msg?.reasoning) {
-                        reasonings.push(msg.reasoning);
-                    }
-                    const deduped = [];
-                    const seen = new Set();
-                    for (const item of reasonings) {
-                        const key = String(item || '').trim();
-                        if (!key || seen.has(key)) continue;
-                        seen.add(key);
-                        deduped.push(item);
-                    }
-                    return deduped;
-                };
-                
-                // 发送消息
                 const sendMessage = async () => {
                     if (!userInput.value.trim() || loading.value) return;
-                    
+
                     const query = userInput.value.trim();
                     userInput.value = '';
-                    
-                    // 添加用户消息
+
                     messages.value.push({
+                        id: `msg_user_${Date.now()}`,
                         role: 'user',
                         content: query
                     });
 
                     const assistantMessage = {
+                        id: `msg_assistant_${Date.now()}`,
                         role: 'assistant',
                         content: '',
-                        sources: [],
-                        reasoning: ''
+                        reasoning: '',
+                        sources: []
                     };
                     messages.value.push(assistantMessage);
-                    
+
+                    syncCurrentSession(true);
                     loading.value = true;
                     streamStarted.value = false;
-                    
-                    // 滚动到底部
+
                     await nextTick();
                     scrollToBottom();
-                    
+
                     try {
                         const response = await fetch(`${apiBase.value}/api/chat/stream`, {
                             method: 'POST',
@@ -741,6 +1491,7 @@
                             const errorData = await response.json().catch(() => ({}));
                             throw new Error(errorData.detail || `请求失败 (${response.status})`);
                         }
+
                         if (!response.body) {
                             throw new Error('浏览器不支持流式读取');
                         }
@@ -758,66 +1509,44 @@
                             const events = buffer.split('\n\n');
                             buffer = events.pop() || '';
 
-                            for (const eventText of events) {
-                                const dataLine = eventText
+                            for (const rawEvent of events) {
+                                const payload = rawEvent
                                     .split('\n')
                                     .filter(line => line.startsWith('data:'))
                                     .map(line => line.slice(5).trim())
                                     .join('');
 
-                                if (!dataLine) continue;
+                                if (!payload) continue;
 
                                 let event;
                                 try {
-                                    event = JSON.parse(dataLine);
+                                    event = JSON.parse(payload);
                                 } catch (_) {
                                     continue;
                                 }
 
-                                if (event.type === 'start') {
-                                    conversationId.value = event.conversation_id || conversationId.value;
-                                    continue;
-                                }
-                                if (event.type === 'delta') {
-                                    assistantMessage.content += event.content || '';
-                                    streamStarted.value = true;
-                                    scrollToBottom();
-                                    continue;
-                                }
-                                if (event.type === 'reasoning_delta') {
-                                    assistantMessage.reasoning += event.content || '';
-                                    streamStarted.value = true;
-                                    scrollToBottom();
-                                    continue;
-                                }
-                                if (event.type === 'done') {
-                                    finished = true;
-                                    conversationId.value = event.conversation_id || conversationId.value;
-                                    assistantMessage.sources = event.sources || [];
-                                    if (!assistantMessage.content) {
-                                        assistantMessage.content = event.answer || '';
-                                    }
-                                    if (event.reasoning) {
-                                        assistantMessage.reasoning = event.reasoning;
-                                    }
-                                    streamStarted.value = true;
-                                    scrollToBottom();
-                                    continue;
-                                }
                                 if (event.type === 'error') {
                                     throw new Error(event.detail || '流式响应失败');
+                                }
+
+                                handleStreamEvent(assistantMessage, event);
+                                if (event.type === 'done') {
+                                    finished = true;
                                 }
                             }
                         }
 
-                        if (!finished && !assistantMessage.content) {
+                        if (!finished && !assistantMessage.content && !assistantMessage.reasoning) {
                             throw new Error('服务端未返回有效内容');
                         }
+
+                        syncCurrentSession(true);
                     } catch (error) {
                         console.error('发送消息失败:', error);
-                        assistantMessage.content = '抱歉，发生了错误：' + error.message;
-                        assistantMessage.sources = [];
+                        assistantMessage.content = `抱歉，发生了错误：${error.message}`;
                         assistantMessage.reasoning = '';
+                        assistantMessage.sources = [];
+                        syncCurrentSession(true);
                     } finally {
                         loading.value = false;
                         streamStarted.value = false;
@@ -825,18 +1554,10 @@
                         scrollToBottom();
                     }
                 };
-                
-                // 滚动到底部
-                const scrollToBottom = () => {
-                    if (chatContainer.value) {
-                        chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
-                    }
-                };
-                
-                // 上传前检查
+
                 const beforeUpload = (file) => {
                     const allowedTypes = ['.pdf', '.docx', '.doc', '.html', '.htm', '.md', '.txt'];
-                    const ext = '.' + file.name.split('.').pop().toLowerCase();
+                    const ext = `.${file.name.split('.').pop().toLowerCase()}`;
                     if (!allowedTypes.includes(ext)) {
                         ElementPlus.ElMessage.error('不支持的文件类型');
                         return false;
@@ -847,89 +1568,58 @@
                     }
                     return true;
                 };
-                
-                // 上传成功
-                const handleUploadSuccess = (response) => {
-                    ElementPlus.ElMessage.success('上传成功：' + response.message);
-                    loadDocuments();
-                    loadStats();
+
+                const handleUploadSuccess = async (response) => {
+                    ElementPlus.ElMessage.success(`上传成功：${response.message}`);
+                    await refreshKnowledgePane();
                 };
-                
-                // 上传失败
+
                 const handleUploadError = (error) => {
                     ElementPlus.ElMessage.error('上传失败');
                     console.error(error);
                 };
-                
-                // 删除文档
+
                 const deleteDocument = async (docId) => {
                     try {
                         const response = await fetch(`${apiBase.value}/api/documents/${docId}`, {
                             method: 'DELETE'
                         });
-                        
+
                         if (!response.ok) {
                             const error = await response.json();
                             throw new Error(error.detail || '删除失败');
                         }
-                        
+
                         const result = await response.json();
                         ElementPlus.ElMessage.success(`文档已删除，同时删除 ${result.deleted_images || 0} 张图片`);
-                        
-                        // 从列表中移除
-                        const index = documents.value.findIndex(d => d.doc_id === docId);
-                        if (index > -1) {
-                            documents.value.splice(index, 1);
-                        }
-                        
-                        // 从选中列表中移除
+
+                        documents.value = documents.value.filter(item => item.doc_id !== docId);
                         const selectedIndex = selectedDocs.value.indexOf(docId);
                         if (selectedIndex > -1) {
                             selectedDocs.value.splice(selectedIndex, 1);
                         }
-                        
-                        // 刷新统计
+                        syncCurrentSession(false);
                         loadStats();
                     } catch (error) {
-                        ElementPlus.ElMessage.error('删除失败: ' + error.message);
+                        ElementPlus.ElMessage.error(`删除失败: ${error.message}`);
                         console.error('删除文档失败:', error);
                     }
                 };
-                
-                // 重命名相关
-                const renameDialogVisible = ref(false);
-                const newFileName = ref('');
-                const renamingDoc = ref(null);
-                const renameLoading = ref(false);
 
-                // 文档详情相关
-                const detailDialogVisible = ref(false);
-                const currentDoc = ref(null);
-
-                // 显示文档详情
-                const showDocDetail = async (doc) => {
-                    currentDoc.value = doc;
-                    detailDialogVisible.value = true;
-                };
-                
-                // 显示重命名对话框
                 const showRenameDialog = (doc) => {
                     renamingDoc.value = doc;
                     newFileName.value = doc.file_name;
                     renameDialogVisible.value = true;
                 };
-                
-                // 执行重命名
+
                 const renameDocument = async () => {
                     if (!newFileName.value.trim()) {
                         ElementPlus.ElMessage.warning('文件名不能为空');
                         return;
                     }
-                    
                     if (!renamingDoc.value) return;
-                    
+
                     renameLoading.value = true;
-                    
                     try {
                         const response = await fetch(`${apiBase.value}/api/documents/${renamingDoc.value.doc_id}`, {
                             method: 'PUT',
@@ -940,127 +1630,154 @@
                                 file_name: newFileName.value.trim()
                             })
                         });
-                        
+
                         if (!response.ok) {
                             const error = await response.json();
                             throw new Error(error.detail || '重命名失败');
                         }
-                        
-                        // 更新本地列表
-                        const doc = documents.value.find(d => d.doc_id === renamingDoc.value.doc_id);
+
+                        const doc = documents.value.find(item => item.doc_id === renamingDoc.value.doc_id);
                         if (doc) {
                             doc.file_name = newFileName.value.trim();
                         }
-                        
+
                         ElementPlus.ElMessage.success('重命名成功');
                         renameDialogVisible.value = false;
                     } catch (error) {
-                        ElementPlus.ElMessage.error('重命名失败: ' + error.message);
-                        console.error('重命名失败:', error);
+                        ElementPlus.ElMessage.error(`重命名失败: ${error.message}`);
                     } finally {
                         renameLoading.value = false;
                     }
                 };
-                
-                // 格式化文件大小
+
+                const showDocDetail = (doc) => {
+                    currentDoc.value = doc;
+                    detailDialogVisible.value = true;
+                };
+
+                const onKbChange = (value) => {
+                    if (value === '__new__') {
+                        newKbDialogVisible.value = true;
+                        selectedKb.value = 'default';
+                    }
+                };
+
+                const createKnowledgeBase = () => {
+                    if (!newKbName.value.trim()) {
+                        ElementPlus.ElMessage.warning('请输入知识库名称');
+                        return;
+                    }
+                    ElementPlus.ElMessage.info('知识库功能开发中，敬请期待');
+                    newKbDialogVisible.value = false;
+                    newKbName.value = '';
+                };
+
                 const formatSize = (bytes) => {
                     if (!bytes) return '0 B';
                     const units = ['B', 'KB', 'MB', 'GB'];
-                    let i = 0;
-                    while (bytes >= 1024 && i < units.length - 1) {
-                        bytes /= 1024;
-                        i++;
+                    let size = bytes;
+                    let index = 0;
+                    while (size >= 1024 && index < units.length - 1) {
+                        size /= 1024;
+                        index += 1;
                     }
-                    return bytes.toFixed(1) + ' ' + units[i];
+                    return `${size.toFixed(1)} ${units[index]}`;
                 };
-                
-                // 格式化日期
+
                 const formatDate = (dateStr) => {
                     if (!dateStr) return '';
-                    const date = new Date(dateStr);
-                    return date.toLocaleDateString('zh-CN');
+                    return new Date(dateStr).toLocaleDateString('zh-CN');
                 };
 
-                // 格式化日期时间
                 const formatDateTime = (dateStr) => {
                     if (!dateStr) return '';
-                    const date = new Date(dateStr);
-                    return date.toLocaleString('zh-CN');
-                };
-
-                // 状态文本
-                const goToDocDetail = () => {
-                    window.location.href = 'doc_detail.html';
+                    return new Date(dateStr).toLocaleString('zh-CN');
                 };
 
                 const statusText = (status) => {
                     const map = {
-                        'pending': '等待中',
-                        'processing': '处理中',
-                        'completed': '已完成',
-                        'failed': '失败'
+                        pending: '等待中',
+                        processing: '处理中',
+                        completed: '已完成',
+                        failed: '失败'
                     };
                     return map[status] || status;
                 };
-                
-                // 初始化
-                onMounted(() => {
-                    loadDocuments();
-                    loadStats();
-                    
-                    // 定期刷新统计
+
+                const goToDocDetail = () => {
+                    window.location.href = 'doc_detail.html';
+                };
+
+                onMounted(async () => {
+                    initializeSessions();
+                    await refreshKnowledgePane();
                     setInterval(loadStats, 30000);
                 });
-                
+
                 return {
                     apiBase,
-                    documents,
-                    selectedDocs,
-                    selectedKb,
-                    stats,
+                    sessions,
+                    currentSessionId,
+                    currentSessionTitle,
                     messages,
+                    selectedDocs,
+                    conversationId,
+                    documents,
+                    stats,
+                    selectedKb,
+                    newKbDialogVisible,
+                    newKbName,
+                    creatingKb,
                     userInput,
                     loading,
                     streamStarted,
                     chatContainer,
+                    renameDialogVisible,
+                    newFileName,
+                    renameLoading,
+                    detailDialogVisible,
+                    currentDoc,
+                    uploadHeaders,
+                    completedDocumentsCount,
+                    createSession,
+                    activateSession,
+                    removeSession,
+                    getSessionPreview,
+                    formatRelativeTime,
                     getAssistantAnswer,
                     getAssistantReasonings,
-                    uploadHeaders,
-                    loadDocuments,
-                    toggleDocSelection,
+                    fillSuggestion,
                     sendMessage,
+                    toggleDocSelection,
+                    refreshKnowledgePane,
                     beforeUpload,
                     handleUploadSuccess,
                     handleUploadError,
                     deleteDocument,
-                    renameDialogVisible,
-                    newFileName,
-                    renamingDoc,
-                    renameLoading,
                     showRenameDialog,
                     renameDocument,
+                    showDocDetail,
+                    onKbChange,
+                    createKnowledgeBase,
                     formatSize,
                     formatDate,
                     formatDateTime,
                     statusText,
-                    newKbDialogVisible,
-                    newKbName,
-                    creatingKb,
-                    onKbChange,
-                    createKnowledgeBase,
                     goToDocDetail,
-                    detailDialogVisible,
-                    currentDoc,
-                    showDocDetail
+                    Plus: ElementPlusIconsVue.Plus,
+                    Promotion: ElementPlusIconsVue.Promotion,
+                    RefreshRight: ElementPlusIconsVue.RefreshRight,
+                    Delete: ElementPlusIconsVue.Delete,
+                    Edit: ElementPlusIconsVue.Edit,
+                    View: ElementPlusIconsVue.View
                 };
             }
         });
-        
-        // 注册Element Plus图标
+
         for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
             app.component(key, component);
         }
-        
+
         app.use(ElementPlus);
         app.mount('#app');
     </script>

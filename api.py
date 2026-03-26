@@ -1054,6 +1054,32 @@ def _sse_data(payload: Dict[str, Any]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _split_stream_text(text: str, chunk_size: int = 6) -> List[str]:
+    """
+    将较大的delta拆成更细的小片段，避免前端一次性收到整大块文本。
+    """
+    if not text:
+        return []
+
+    pieces: List[str] = []
+    current = []
+    current_len = 0
+
+    for char in text:
+        current.append(char)
+        current_len += 1
+
+        if char == "\n" or current_len >= chunk_size:
+            pieces.append("".join(current))
+            current = []
+            current_len = 0
+
+    if current:
+        pieces.append("".join(current))
+
+    return pieces
+
+
 @app.post("/api/chat/stream")
 async def chat_stream(request: ChatRequest):
     """
@@ -1087,11 +1113,15 @@ async def chat_stream(request: ChatRequest):
 
                 if reasoning_delta:
                     reasoning_parts.append(reasoning_delta)
-                    yield _sse_data({"type": "reasoning_delta", "content": reasoning_delta})
+                    for piece in _split_stream_text(reasoning_delta):
+                        yield _sse_data({"type": "reasoning_delta", "content": piece})
+                        await asyncio.sleep(0.012)
 
                 if answer_delta:
                     answer_parts.append(answer_delta)
-                    yield _sse_data({"type": "delta", "content": answer_delta})
+                    for piece in _split_stream_text(answer_delta):
+                        yield _sse_data({"type": "delta", "content": piece})
+                        await asyncio.sleep(0.012)
 
                 await asyncio.sleep(0)
 
