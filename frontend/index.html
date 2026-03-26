@@ -298,6 +298,7 @@
                             :on-error="handleUploadError"
                             :before-upload="beforeUpload"
                             :show-file-list="false"
+                            :data="{ kb_id: selectedKb }"
                             drag
                         >
                             <el-icon size="40" color="#667eea"><upload-filled /></el-icon>
@@ -312,6 +313,7 @@
                     <div style="margin-bottom: 12px;">
                         <el-select v-model="selectedKb" placeholder="选择知识库" size="default" style="width: 100%;" @change="onKbChange">
                             <el-option label="默认知识库" value="default" />
+                            <el-option v-for="kb in knowledgeBases" :key="kb.kb_id" :label="kb.name" :value="kb.kb_id" />
                             <el-option label="+ 新建知识库" value="__new__" />
                         </el-select>
                     </div>
@@ -534,7 +536,7 @@
             setup() {
                 // API基础地址
                 const apiBase = ref('http://localhost:8000');
-                
+
                 // 文档相关
                 const documents = ref([]);
                 const selectedDocs = ref([]);
@@ -542,26 +544,39 @@
                 const newKbDialogVisible = ref(false);
                 const newKbName = ref('');
                 const creatingKb = ref(false);
+                const knowledgeBases = ref([]);
                 const stats = reactive({
                     total_documents: 0,
                     total_chunks: 0,
                     total_images: 0
                 });
-                
+
                 // 对话相关
                 const messages = ref([]);
                 const userInput = ref('');
                 const loading = ref(false);
                 const chatContainer = ref(null);
                 const conversationId = ref(null);
-                
+
                 // 上传相关
                 const uploadHeaders = computed(() => ({}));
-                
+
+                // 加载知识库列表
+                const loadKnowledgeBases = async () => {
+                    try {
+                        const response = await fetch(`${apiBase.value}/api/knowledge-bases`);
+                        const data = await response.json();
+                        knowledgeBases.value = data.knowledge_bases || [];
+                    } catch (error) {
+                        console.error('加载知识库失败:', error);
+                    }
+                };
+
                 // 加载文档列表
                 const loadDocuments = async () => {
                     try {
-                        const response = await fetch(`${apiBase.value}/api/documents?limit=50`);
+                        const kbParam = selectedKb.value !== 'default' ? `&kb_id=${selectedKb.value}` : '';
+                        const response = await fetch(`${apiBase.value}/api/documents?limit=50${kbParam}`);
                         const data = await response.json();
                         documents.value = data.documents || [];
                     } catch (error) {
@@ -582,10 +597,13 @@
                 };
 
                 // 知识库选择变化
-                const onKbChange = (value) => {
+                const onKbChange = async (value) => {
                     if (value === '__new__') {
                         newKbDialogVisible.value = true;
                         selectedKb.value = 'default';
+                    } else {
+                        selectedDocs.value = [];
+                        await loadDocuments();
                     }
                 };
 
@@ -595,9 +613,26 @@
                         ElementPlus.ElMessage.warning('请输入知识库名称');
                         return;
                     }
-                    ElementPlus.ElMessage.info('知识库功能开发中，敬请期待');
-                    newKbDialogVisible.value = false;
-                    newKbName.value = '';
+                    creatingKb.value = true;
+                    try {
+                        const response = await fetch(`${apiBase.value}/api/knowledge-bases`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: newKbName.value.trim() })
+                        });
+                        if (!response.ok) throw new Error('创建失败');
+                        const data = await response.json();
+                        ElementPlus.ElMessage.success('知识库创建成功');
+                        newKbDialogVisible.value = false;
+                        newKbName.value = '';
+                        await loadKnowledgeBases();
+                        selectedKb.value = data.kb_id;
+                        await loadDocuments();
+                    } catch (error) {
+                        ElementPlus.ElMessage.error('创建失败: ' + error.message);
+                    } finally {
+                        creatingKb.value = false;
+                    }
                 };
 
                 // 切换文档选择
@@ -848,9 +883,10 @@
                 
                 // 初始化
                 onMounted(() => {
+                    loadKnowledgeBases();
                     loadDocuments();
                     loadStats();
-                    
+
                     // 定期刷新统计
                     setInterval(loadStats, 30000);
                 });
@@ -860,6 +896,7 @@
                     documents,
                     selectedDocs,
                     selectedKb,
+                    knowledgeBases,
                     stats,
                     messages,
                     userInput,
@@ -867,6 +904,7 @@
                     chatContainer,
                     uploadHeaders,
                     loadDocuments,
+                    loadKnowledgeBases,
                     toggleDocSelection,
                     sendMessage,
                     beforeUpload,
