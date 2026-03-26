@@ -180,6 +180,21 @@
             font-family: 'Fira Code', monospace;
             font-size: 14px;
         }
+
+        .assistant-answer {
+            white-space: normal;
+        }
+
+        .reasoning-block {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-left: 3px solid #7b7f93;
+            background: rgba(142, 142, 160, 0.15);
+            border-radius: 8px;
+            color: #b9bccb;
+            font-size: 13px;
+            line-height: 1.65;
+        }
         
         .sources-section {
             margin-top: 16px;
@@ -592,6 +607,121 @@
             textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
         }
         
+        function renderSourcesHtml(sources = []) {
+            if (!sources || sources.length === 0) return '';
+            return `
+                <div class="sources-section">
+                    <div class="sources-title">📚 参考来源 (${sources.length})</div>
+                    ${sources.map(s => `
+                        <div class="source-item">
+                            <div class="source-file">📄 ${s.file_name || '来源文档'} ${s.page_number ? `第${s.page_number}页` : ''}</div>
+                            <div class="source-text">${escapeHtml(s.text || '')}</div>
+                            <div class="source-score">相似度: ${(((s.similarity || 0) * 100)).toFixed(1)}%</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function formatTextHtml(text) {
+            return escapeHtml(text).replace(/\n/g, '<br>');
+        }
+
+        function parseThinkContent(text) {
+            const raw = String(text ?? '');
+            const thinks = [];
+            const answerParts = [];
+            const regex = /<think>([\s\S]*?)<\/think>/gi;
+            let cursor = 0;
+            let match;
+
+            while ((match = regex.exec(raw)) !== null) {
+                if (match.index > cursor) {
+                    answerParts.push(raw.slice(cursor, match.index));
+                }
+                if (match[1]) {
+                    thinks.push(match[1]);
+                }
+                cursor = regex.lastIndex;
+            }
+
+            if (cursor < raw.length) {
+                const tail = raw.slice(cursor);
+                const openIdx = tail.indexOf('<think>');
+                if (openIdx >= 0) {
+                    answerParts.push(tail.slice(0, openIdx));
+                    const pendingThink = tail.slice(openIdx + '<think>'.length);
+                    if (pendingThink) {
+                        thinks.push(pendingThink);
+                    }
+                } else {
+                    answerParts.push(tail);
+                }
+            }
+
+            return {
+                answer: answerParts.join(''),
+                thinks: thinks
+            };
+        }
+
+        function renderAssistantContentHtml(content, reasoning = '') {
+            const parsed = parseThinkContent(content);
+            const reasoningBlocks = [...parsed.thinks];
+            if (reasoning) {
+                reasoningBlocks.push(reasoning);
+            }
+
+            const dedupedReasoningBlocks = [];
+            const seen = new Set();
+            for (const block of reasoningBlocks) {
+                const key = String(block || '').trim();
+                if (!key || seen.has(key)) continue;
+                seen.add(key);
+                dedupedReasoningBlocks.push(block);
+            }
+
+            const answerHtml = parsed.answer
+                ? `<div class="assistant-answer">${formatTextHtml(parsed.answer)}</div>`
+                : '';
+            const reasoningHtml = dedupedReasoningBlocks
+                .map(block => `<div class="reasoning-block">${formatTextHtml(block)}</div>`)
+                .join('');
+
+            return `${answerHtml}${reasoningHtml}`;
+        }
+
+        function renderMessageHtml(role, content, sources = null, reasoning = '') {
+            const contentHtml = role === 'assistant'
+                ? renderAssistantContentHtml(content, reasoning)
+                : formatTextHtml(content);
+            return `
+                <div class="message">
+                    <div class="message-avatar ${role}">${role === 'user' ? '👤' : '🤖'}</div>
+                    <div class="message-content">
+                        ${contentHtml}
+                        ${renderSourcesHtml(sources)}
+                    </div>
+                </div>
+            `;
+        }
+
+        function createAssistantPlaceholder() {
+            const container = document.getElementById('chatMessages');
+            const wrapper = document.createElement('div');
+            wrapper.className = 'message-wrapper assistant';
+            wrapper.innerHTML = renderMessageHtml('assistant', '');
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+            return wrapper;
+        }
+
+        function updateAssistantPlaceholder(wrapper, content, sources = null, reasoning = '') {
+            wrapper.innerHTML = renderMessageHtml('assistant', content, sources, reasoning);
+            const container = document.getElementById('chatMessages');
+            container.scrollTop = container.scrollHeight;
+        }
+
         async function sendMessage() {
             const input = document.getElementById('userInput');
             const query = input.value.trim();
@@ -609,10 +739,10 @@
             
             isLoading = true;
             document.getElementById('sendBtn').disabled = true;
-            showTypingIndicator();
+            const assistantWrapper = createAssistantPlaceholder();
             
             try {
-                const res = await fetch(`${API_BASE}/api/chat`, {
+                const res = await fetch(`${API_BASE}/api/chat/stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -623,16 +753,88 @@
                         conversation_id: conversationId
                     })
                 });
-                
-                const data = await res.json();
-                conversationId = data.conversation_id;
-                
-                hideTypingIndicator();
-                addMessage('assistant', data.answer, data.sources);
-                
+
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `请求失败 (${res.status})`);
+                }
+                if (!res.body) {
+                    throw new Error('浏览器不支持流式读取');
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+                let answer = '';
+                let reasoning = '';
+                let sources = [];
+                let finished = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const events = buffer.split('\n\n');
+                    buffer = events.pop() || '';
+
+                    for (const eventText of events) {
+                        const dataLine = eventText
+                            .split('\n')
+                            .filter(line => line.startsWith('data:'))
+                            .map(line => line.slice(5).trim())
+                            .join('');
+
+                        if (!dataLine) continue;
+
+                        let event;
+                        try {
+                            event = JSON.parse(dataLine);
+                        } catch (_) {
+                            continue;
+                        }
+
+                        if (event.type === 'start') {
+                            conversationId = event.conversation_id || conversationId;
+                            continue;
+                        }
+                        if (event.type === 'delta') {
+                            answer += event.content || '';
+                            updateAssistantPlaceholder(assistantWrapper, answer, null, reasoning);
+                            continue;
+                        }
+                        if (event.type === 'reasoning_delta') {
+                            reasoning += event.content || '';
+                            updateAssistantPlaceholder(assistantWrapper, answer, null, reasoning);
+                            continue;
+                        }
+                        if (event.type === 'done') {
+                            finished = true;
+                            conversationId = event.conversation_id || conversationId;
+                            sources = event.sources || [];
+                            if (!answer) {
+                                answer = event.answer || '';
+                            }
+                            if (event.reasoning) {
+                                reasoning = event.reasoning;
+                            }
+                            updateAssistantPlaceholder(assistantWrapper, answer, sources, reasoning);
+                            continue;
+                        }
+                        if (event.type === 'error') {
+                            throw new Error(event.detail || '流式响应失败');
+                        }
+                    }
+                }
+
+                if (!finished && !answer) {
+                    throw new Error('服务端未返回有效内容');
+                }
+
+                messages.push({ role: 'assistant', content: answer, sources, reasoning });
                 saveChatHistory();
             } catch (e) {
-                hideTypingIndicator();
+                assistantWrapper.remove();
                 addMessage('assistant', '抱歉，发生了错误: ' + e.message);
             } finally {
                 isLoading = false;
@@ -640,40 +842,13 @@
             }
         }
         
-        function addMessage(role, content, sources = null) {
-            messages.push({ role, content, sources });
+        function addMessage(role, content, sources = null, reasoning = '') {
+            messages.push({ role, content, sources, reasoning });
             
             const container = document.getElementById('chatMessages');
             const wrapper = document.createElement('div');
             wrapper.className = `message-wrapper ${role}`;
-            
-            const avatar = role === 'user' ? '👤' : '🤖';
-            
-            let sourcesHtml = '';
-            if (sources && sources.length > 0) {
-                sourcesHtml = `
-                    <div class="sources-section">
-                        <div class="sources-title">📚 参考来源 (${sources.length})</div>
-                        ${sources.map(s => `
-                            <div class="source-item">
-                                <div class="source-file">📄 ${s.file_name || '来源文档'} ${s.page_number ? `第${s.page_number}页` : ''}</div>
-                                <div class="source-text">${escapeHtml(s.text)}</div>
-                                <div class="source-score">相似度: ${(s.similarity * 100).toFixed(1)}%</div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-            }
-            
-            wrapper.innerHTML = `
-                <div class="message">
-                    <div class="message-avatar ${role}">${avatar}</div>
-                    <div class="message-content">
-                        ${escapeHtml(content).replace(/\n/g, '<br>')}
-                        ${sourcesHtml}
-                    </div>
-                </div>
-            `;
+            wrapper.innerHTML = renderMessageHtml(role, content, sources, reasoning);
             
             container.appendChild(wrapper);
             container.scrollTop = container.scrollHeight;
@@ -707,7 +882,7 @@
         
         function escapeHtml(text) {
             const div = document.createElement('div');
-            div.textContent = text;
+            div.textContent = String(text ?? '');
             return div.innerHTML;
         }
         
@@ -770,34 +945,7 @@
             messages.forEach(msg => {
                 const wrapper = document.createElement('div');
                 wrapper.className = `message-wrapper ${msg.role}`;
-                
-                const avatar = msg.role === 'user' ? '👤' : '🤖';
-                
-                let sourcesHtml = '';
-                if (msg.sources && msg.sources.length > 0) {
-                    sourcesHtml = `
-                        <div class="sources-section">
-                            <div class="sources-title">📚 参考来源 (${msg.sources.length})</div>
-                            ${msg.sources.map(s => `
-                                <div class="source-item">
-                                    <div class="source-file">📄 ${s.file_name || '来源文档'}</div>
-                                    <div class="source-text">${escapeHtml(s.text)}</div>
-                                    <div class="source-score">相似度: ${(s.similarity * 100).toFixed(1)}%</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `;
-                }
-                
-                wrapper.innerHTML = `
-                    <div class="message">
-                        <div class="message-avatar ${msg.role}">${avatar}</div>
-                        <div class="message-content">
-                            ${escapeHtml(msg.content).replace(/\n/g, '<br>')}
-                            ${sourcesHtml}
-                        </div>
-                    </div>
-                `;
+                wrapper.innerHTML = renderMessageHtml(msg.role, msg.content, msg.sources, msg.reasoning || '');
                 
                 container.appendChild(wrapper);
             });

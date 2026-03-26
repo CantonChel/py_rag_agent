@@ -11,9 +11,10 @@
 5. 返回回答和来源信息
 """
 
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Iterator, List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 
+import httpx
 from openai import OpenAI
 
 from config import config
@@ -26,6 +27,7 @@ class RAGResponse:
     answer: str
     sources: List[Dict[str, Any]]
     query: str
+    reasoning: Optional[str] = None
 
 
 class EmbeddingService:
@@ -40,9 +42,12 @@ class EmbeddingService:
         self.base_url = config.embedding.base_url
         self.model_name = config.embedding.model_name
         
+        # 不继承系统代理环境变量，避免 SOCKS 代理缺少 socksio 时报错
+        self._http_client = httpx.Client(trust_env=False, timeout=60.0)
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.base_url
+            base_url=self.base_url,
+            http_client=self._http_client
         )
     
     def embed_query(self, text: str) -> List[float]:
@@ -76,9 +81,12 @@ class RerankService:
         self.model_name = config.rerank.model_name
         
         if self.enabled:
+            # 不继承系统代理环境变量，避免 SOCKS 代理缺少 socksio 时报错
+            self._http_client = httpx.Client(trust_env=False, timeout=60.0)
             self.client = OpenAI(
                 api_key=self.api_key,
-                base_url=self.base_url
+                base_url=self.base_url,
+                http_client=self._http_client
             )
     
     def rerank(
@@ -146,9 +154,12 @@ class PgVectorRAGAgent:
         self.embedding_service = EmbeddingService()
         self.rerank_service = RerankService()
         
+        # 不继承系统代理环境变量，避免 SOCKS 代理缺少 socksio 时报错
+        self._http_client = httpx.Client(trust_env=False, timeout=120.0)
         self.llm_client = OpenAI(
             api_key=config.llm.api_key,
-            base_url=config.llm.base_url
+            base_url=config.llm.base_url,
+            http_client=self._http_client
         )
         self.llm_model = config.llm.model_name
         
@@ -175,6 +186,118 @@ class PgVectorRAGAgent:
 4. 适当引用来源信息
 
 请始终用中文回答用户问题。"""
+
+    def _build_user_message(self, context: str, query: str) -> str:
+        """构建用户提示词（包含上下文和问题）"""
+        return f"""请基于以下知识库内容回答用户问题。
+
+【知识库内容】
+{context}
+
+【用户问题】
+{query}
+
+请提供准确、有条理的回答："""
+
+    def _extract_text(self, value: Any) -> str:
+        """
+        尽可能从不同结构中提取文本（兼容不同SDK返回结构）
+        """
+        if value is None:
+            return ""
+
+        if isinstance(value, str):
+            return value
+
+        if isinstance(value, list):
+            return "".join(self._extract_text(item) for item in value)
+
+        if isinstance(value, dict):
+            for key in ("text", "content", "reasoning_content", "reasoning", "output_text", "value"):
+                if key in value:
+                    text = self._extract_text(value.get(key))
+                    if text:
+                        return text
+            return ""
+
+        for attr in ("text", "content", "reasoning_content", "reasoning", "output_text", "value"):
+            if hasattr(value, attr):
+                text = self._extract_text(getattr(value, attr))
+                if text:
+                    return text
+
+        return ""
+
+    def _extract_reasoning_from_message(self, message: Any) -> str:
+        """从非流式message中提取reasoning文本"""
+        for attr in ("reasoning_content", "reasoning"):
+            if hasattr(message, attr):
+                text = self._extract_text(getattr(message, attr))
+                if text:
+                    return text
+
+        extra = getattr(message, "model_extra", None)
+        if isinstance(extra, dict):
+            for key in ("reasoning_content", "reasoning"):
+                text = self._extract_text(extra.get(key))
+                if text:
+                    return text
+        return ""
+
+    def _extract_reasoning_from_delta(self, delta: Any) -> str:
+        """从流式delta中提取reasoning文本"""
+        for attr in ("reasoning_content", "reasoning"):
+            if hasattr(delta, attr):
+                text = self._extract_text(getattr(delta, attr))
+                if text:
+                    return text
+
+        extra = getattr(delta, "model_extra", None)
+        if isinstance(extra, dict):
+            for key in ("reasoning_content", "reasoning"):
+                text = self._extract_text(extra.get(key))
+                if text:
+                    return text
+        return ""
+
+    def _stream_llm_response(self, user_message: str) -> Iterator[Dict[str, str]]:
+        """调用LLM流式生成回答，返回answer/reasoning增量"""
+        stream = self.llm_client.chat.completions.create(
+            model=self.llm_model,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7,
+            max_tokens=2000,
+            stream=True
+        )
+
+        for chunk in stream:
+            delta = chunk.choices[0].delta
+            answer_delta = self._extract_text(getattr(delta, "content", None))
+            reasoning_delta = self._extract_reasoning_from_delta(delta)
+
+            if answer_delta or reasoning_delta:
+                yield {
+                    "content": answer_delta,
+                    "reasoning": reasoning_delta
+                }
+
+    def prepare_chat(
+        self,
+        query: str,
+        top_k: int = 5,
+        doc_ids: Optional[List[str]] = None,
+        use_rerank: bool = True
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        预处理对话请求，返回LLM输入消息和来源信息
+        """
+        chunks = self._retrieve(query, top_k, doc_ids, use_rerank)
+        context, sources = self._build_context(chunks)
+        user_message = self._build_user_message(context, query)
+        return user_message, sources
     
     def _retrieve(
         self,
@@ -282,25 +405,7 @@ class PgVectorRAGAgent:
         if self.verbose:
             print(f"\n[用户问题] {query}")
         
-        chunks = self._retrieve(query, top_k, doc_ids, use_rerank)
-        
-        if self.verbose:
-            print(f"[检索结果] 找到 {len(chunks)} 个相关文档块")
-        
-        context, sources = self._build_context(chunks)
-        
-        if self.verbose:
-            print(f"[上下文长度] {len(context)} 字符")
-        
-        user_message = f"""请基于以下知识库内容回答用户问题。
-
-【知识库内容】
-{context}
-
-【用户问题】
-{query}
-
-请提供准确、有条理的回答："""
+        user_message, sources = self.prepare_chat(query, top_k, doc_ids, use_rerank)
 
         response = self.llm_client.chat.completions.create(
             model=self.llm_model,
@@ -311,16 +416,19 @@ class PgVectorRAGAgent:
             temperature=0.7,
             max_tokens=2000
         )
-        
-        answer = response.choices[0].message.content
-        
+
+        message = response.choices[0].message
+        answer = self._extract_text(getattr(message, "content", None))
+        reasoning = self._extract_reasoning_from_message(message)
+
         if self.verbose:
             print(f"\n[回答]\n{answer}")
         
         return RAGResponse(
             answer=answer,
             sources=sources,
-            query=query
+            query=query,
+            reasoning=reasoning or None
         )
     
     def chat_stream(
@@ -342,33 +450,24 @@ class PgVectorRAGAgent:
         Yields:
             响应的每个token
         """
-        chunks = self._retrieve(query, top_k, doc_ids, use_rerank)
-        context, _ = self._build_context(chunks)
-        
-        user_message = f"""请基于以下知识库内容回答用户问题。
+        user_message, _ = self.prepare_chat(query, top_k, doc_ids, use_rerank)
+        for delta in self._stream_llm_response(user_message):
+            content = delta.get("content")
+            if content:
+                yield content
 
-【知识库内容】
-{context}
-
-【用户问题】
-{query}
-
-请提供准确、有条理的回答："""
-
-        stream = self.llm_client.chat.completions.create(
-            model=self.llm_model,
-            messages=[
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.7,
-            max_tokens=2000,
-            stream=True
-        )
-        
-        for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+    def chat_stream_with_sources(
+        self,
+        query: str,
+        top_k: int = 5,
+        doc_ids: Optional[List[str]] = None,
+        use_rerank: bool = True
+    ) -> Tuple[Iterator[Dict[str, str]], List[Dict[str, Any]]]:
+        """
+        流式对话（同时返回来源信息）
+        """
+        user_message, sources = self.prepare_chat(query, top_k, doc_ids, use_rerank)
+        return self._stream_llm_response(user_message), sources
 
 
 _pgvector_rag_agent = None

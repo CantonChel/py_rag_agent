@@ -127,7 +127,7 @@ echo "  API服务已启动 (PID: $API_PID)"
 # 等待API服务就绪
 echo "  等待API服务就绪..."
 for i in {1..30}; do
-    if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+    if curl -sf http://localhost:8000/api/health > /dev/null 2>&1; then
         echo -e "  ${GREEN}✓ API服务已就绪${NC}"
         break
     fi

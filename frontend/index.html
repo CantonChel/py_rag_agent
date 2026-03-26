@@ -112,6 +112,22 @@
             text-align: left;
             line-height: 1.6;
         }
+
+        .assistant-answer {
+            white-space: pre-wrap;
+        }
+
+        .reasoning-block {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-left: 3px solid #c8ccd4;
+            background: #f3f5f8;
+            border-radius: 8px;
+            color: #6f7785;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
         
         .input-area {
             display: flex;
@@ -459,7 +475,14 @@
                             <div class="bubble">
                                 <div v-if="msg.role === 'user'">{{ msg.content }}</div>
                                 <div v-else>
-                                    <div>{{ msg.content }}</div>
+                                    <div class="assistant-answer">{{ getAssistantAnswer(msg) }}</div>
+                                    <div
+                                        v-for="(reason, reasonIdx) in getAssistantReasonings(msg)"
+                                        :key="`reason-${index}-${reasonIdx}`"
+                                        class="reasoning-block"
+                                    >
+                                        {{ reason }}
+                                    </div>
                                     
                                     <!-- 来源展示 -->
                                     <div v-if="msg.sources && msg.sources.length > 0">
@@ -483,7 +506,7 @@
                         </div>
                         
                         <!-- 加载中 -->
-                        <div v-if="loading" class="message message-assistant">
+                        <div v-if="loading && !streamStarted" class="message message-assistant">
                             <div class="bubble">
                                 <span class="loading-dots">
                                     思考中<span>.</span><span>.</span><span>.</span>
@@ -552,6 +575,7 @@
                 const messages = ref([]);
                 const userInput = ref('');
                 const loading = ref(false);
+                const streamStarted = ref(false);
                 const chatContainer = ref(null);
                 const conversationId = ref(null);
                 
@@ -609,6 +633,66 @@
                         selectedDocs.value.push(docId);
                     }
                 };
+
+                const parseThinkContent = (text) => {
+                    const raw = String(text ?? '');
+                    const thinks = [];
+                    const answerParts = [];
+                    const regex = /<think>([\s\S]*?)<\/think>/gi;
+                    let cursor = 0;
+                    let match;
+
+                    while ((match = regex.exec(raw)) !== null) {
+                        if (match.index > cursor) {
+                            answerParts.push(raw.slice(cursor, match.index));
+                        }
+                        if (match[1]) {
+                            thinks.push(match[1]);
+                        }
+                        cursor = regex.lastIndex;
+                    }
+
+                    if (cursor < raw.length) {
+                        const tail = raw.slice(cursor);
+                        const openIdx = tail.indexOf('<think>');
+                        if (openIdx >= 0) {
+                            answerParts.push(tail.slice(0, openIdx));
+                            const pendingThink = tail.slice(openIdx + '<think>'.length);
+                            if (pendingThink) {
+                                thinks.push(pendingThink);
+                            }
+                        } else {
+                            answerParts.push(tail);
+                        }
+                    }
+
+                    return {
+                        answer: answerParts.join(''),
+                        thinks: thinks
+                    };
+                };
+
+                const getAssistantAnswer = (msg) => {
+                    const parsed = parseThinkContent(msg?.content || '');
+                    return parsed.answer;
+                };
+
+                const getAssistantReasonings = (msg) => {
+                    const parsed = parseThinkContent(msg?.content || '');
+                    const reasonings = [...parsed.thinks];
+                    if (msg?.reasoning) {
+                        reasonings.push(msg.reasoning);
+                    }
+                    const deduped = [];
+                    const seen = new Set();
+                    for (const item of reasonings) {
+                        const key = String(item || '').trim();
+                        if (!key || seen.has(key)) continue;
+                        seen.add(key);
+                        deduped.push(item);
+                    }
+                    return deduped;
+                };
                 
                 // 发送消息
                 const sendMessage = async () => {
@@ -622,15 +706,24 @@
                         role: 'user',
                         content: query
                     });
+
+                    const assistantMessage = {
+                        role: 'assistant',
+                        content: '',
+                        sources: [],
+                        reasoning: ''
+                    };
+                    messages.value.push(assistantMessage);
                     
                     loading.value = true;
+                    streamStarted.value = false;
                     
                     // 滚动到底部
                     await nextTick();
                     scrollToBottom();
                     
                     try {
-                        const response = await fetch(`${apiBase.value}/api/chat`, {
+                        const response = await fetch(`${apiBase.value}/api/chat/stream`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json'
@@ -643,27 +736,91 @@
                                 conversation_id: conversationId.value
                             })
                         });
-                        
-                        const data = await response.json();
-                        
-                        // 更新会话ID
-                        conversationId.value = data.conversation_id;
-                        
-                        // 添加助手消息
-                        messages.value.push({
-                            role: 'assistant',
-                            content: data.answer,
-                            sources: data.sources || []
-                        });
-                        
+
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(errorData.detail || `请求失败 (${response.status})`);
+                        }
+                        if (!response.body) {
+                            throw new Error('浏览器不支持流式读取');
+                        }
+
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder('utf-8');
+                        let buffer = '';
+                        let finished = false;
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+
+                            buffer += decoder.decode(value, { stream: true });
+                            const events = buffer.split('\n\n');
+                            buffer = events.pop() || '';
+
+                            for (const eventText of events) {
+                                const dataLine = eventText
+                                    .split('\n')
+                                    .filter(line => line.startsWith('data:'))
+                                    .map(line => line.slice(5).trim())
+                                    .join('');
+
+                                if (!dataLine) continue;
+
+                                let event;
+                                try {
+                                    event = JSON.parse(dataLine);
+                                } catch (_) {
+                                    continue;
+                                }
+
+                                if (event.type === 'start') {
+                                    conversationId.value = event.conversation_id || conversationId.value;
+                                    continue;
+                                }
+                                if (event.type === 'delta') {
+                                    assistantMessage.content += event.content || '';
+                                    streamStarted.value = true;
+                                    scrollToBottom();
+                                    continue;
+                                }
+                                if (event.type === 'reasoning_delta') {
+                                    assistantMessage.reasoning += event.content || '';
+                                    streamStarted.value = true;
+                                    scrollToBottom();
+                                    continue;
+                                }
+                                if (event.type === 'done') {
+                                    finished = true;
+                                    conversationId.value = event.conversation_id || conversationId.value;
+                                    assistantMessage.sources = event.sources || [];
+                                    if (!assistantMessage.content) {
+                                        assistantMessage.content = event.answer || '';
+                                    }
+                                    if (event.reasoning) {
+                                        assistantMessage.reasoning = event.reasoning;
+                                    }
+                                    streamStarted.value = true;
+                                    scrollToBottom();
+                                    continue;
+                                }
+                                if (event.type === 'error') {
+                                    throw new Error(event.detail || '流式响应失败');
+                                }
+                            }
+                        }
+
+                        if (!finished && !assistantMessage.content) {
+                            throw new Error('服务端未返回有效内容');
+                        }
                     } catch (error) {
                         console.error('发送消息失败:', error);
-                        messages.value.push({
-                            role: 'assistant',
-                            content: '抱歉，发生了错误：' + error.message
-                        });
+                        assistantMessage.content = '抱歉，发生了错误：' + error.message;
+                        assistantMessage.sources = [];
+                        assistantMessage.reasoning = '';
                     } finally {
                         loading.value = false;
+                        streamStarted.value = false;
                         await nextTick();
                         scrollToBottom();
                     }
@@ -864,7 +1021,10 @@
                     messages,
                     userInput,
                     loading,
+                    streamStarted,
                     chatContainer,
+                    getAssistantAnswer,
+                    getAssistantReasonings,
                     uploadHeaders,
                     loadDocuments,
                     toggleDocSelection,

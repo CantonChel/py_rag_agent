@@ -46,6 +46,7 @@ GET    /api/stats                系统统计
 import os
 import io
 import uuid
+import json
 import asyncio
 import tempfile
 from typing import List, Optional, Dict, Any
@@ -54,7 +55,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from config import config
@@ -116,6 +117,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """对话响应模型"""
     answer: str
+    reasoning: Optional[str] = None
     sources: List[Dict[str, Any]]
     conversation_id: str
     query: str
@@ -1037,6 +1039,7 @@ async def chat(request: ChatRequest):
         
         return ChatResponse(
             answer=result.answer,
+            reasoning=result.reasoning,
             sources=result.sources,
             conversation_id=conversation_id,
             query=request.query
@@ -1044,6 +1047,75 @@ async def chat(request: ChatRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"对话处理失败: {str(e)}")
+
+
+def _sse_data(payload: Dict[str, Any]) -> str:
+    """将字典编码为SSE data行"""
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """
+    RAG流式对话接口（SSE）
+
+    返回`text/event-stream`，前端可逐段显示回答内容。
+    """
+    conversation_id = request.conversation_id or f"conv_{uuid.uuid4().hex[:8]}"
+
+    async def event_generator():
+        yield _sse_data({
+            "type": "start",
+            "conversation_id": conversation_id,
+            "query": request.query
+        })
+
+        try:
+            agent = get_pgvector_rag_agent()
+            token_stream, sources = agent.chat_stream_with_sources(
+                query=request.query,
+                top_k=request.top_k,
+                doc_ids=request.doc_ids,
+                use_rerank=request.use_rerank
+            )
+
+            answer_parts: List[str] = []
+            reasoning_parts: List[str] = []
+            for delta in token_stream:
+                answer_delta = delta.get("content", "")
+                reasoning_delta = delta.get("reasoning", "")
+
+                if reasoning_delta:
+                    reasoning_parts.append(reasoning_delta)
+                    yield _sse_data({"type": "reasoning_delta", "content": reasoning_delta})
+
+                if answer_delta:
+                    answer_parts.append(answer_delta)
+                    yield _sse_data({"type": "delta", "content": answer_delta})
+
+                await asyncio.sleep(0)
+
+            yield _sse_data({
+                "type": "done",
+                "conversation_id": conversation_id,
+                "query": request.query,
+                "answer": "".join(answer_parts),
+                "reasoning": "".join(reasoning_parts),
+                "sources": sources
+            })
+        except Exception as e:
+            yield _sse_data({"type": "error", "detail": f"对话处理失败: {str(e)}"})
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
+    }
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers=headers
+    )
 
 
 @app.post("/api/search", response_model=SearchResponse)
@@ -1224,10 +1296,12 @@ if __name__ == "__main__":
     print(f"交互文档: http://localhost:{config.app.api_port}/redoc")
     print("=" * 60)
     
+    api_reload = os.getenv("API_RELOAD", "false").lower() == "true"
+
     uvicorn.run(
         "api:app",
         host=config.app.api_host,
         port=config.app.api_port,
-        reload=True,
+        reload=api_reload,
         log_level="info"
     )
