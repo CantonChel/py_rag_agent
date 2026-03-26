@@ -66,7 +66,7 @@ from config import config
 class DocumentRecord:
     """
     文档记录数据结构
-    
+
     【对应数据库表】documents
     存储上传文档的元数据信息
     """
@@ -80,6 +80,22 @@ class DocumentRecord:
     total_pages: int = 0
     total_chunks: int = 0
     status: str = "pending"  # pending, processing, completed, failed
+    kb_id: str = "default"
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+@dataclass
+class KnowledgeBaseRecord:
+    """
+    知识库记录数据结构
+
+    【对应数据库表】knowledge_bases
+    存储知识库的元数据信息
+    """
+    kb_id: str
+    name: str
+    description: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -261,49 +277,53 @@ class PgVectorStore:
         return None
     
     def list_documents(
-        self, 
+        self,
         status: Optional[str] = None,
+        kb_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[DocumentRecord]:
         """
         列出文档
-        
+
         【参数】
             status: 按状态过滤（可选）
+            kb_id: 按知识库ID过滤（可选）
             limit: 返回数量限制
             offset: 偏移量
-            
+
         【返回】
             DocumentRecord列表
         """
+        conditions = []
+        params = []
+
         if status:
-            sql = """
-                SELECT doc_id, file_name, file_type, file_path, file_size,
-                       minio_bucket, minio_object_name, total_pages, total_chunks,
-                       status, created_at, updated_at
-                FROM documents 
-                WHERE status = %s 
-                ORDER BY created_at DESC 
-                LIMIT %s OFFSET %s
-            """
-            params = (status, limit, offset)
-        else:
-            sql = """
-                SELECT doc_id, file_name, file_type, file_path, file_size,
-                       minio_bucket, minio_object_name, total_pages, total_chunks,
-                       status, created_at, updated_at
-                FROM documents 
-                ORDER BY created_at DESC 
-                LIMIT %s OFFSET %s
-            """
-            params = (limit, offset)
-        
+            conditions.append("status = %s")
+            params.append(status)
+
+        if kb_id:
+            conditions.append("kb_id = %s")
+            params.append(kb_id)
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+        sql = f"""
+            SELECT doc_id, file_name, file_type, file_path, file_size,
+                   minio_bucket, minio_object_name, total_pages, total_chunks,
+                   status, COALESCE(kb_id, 'default') as kb_id, created_at, updated_at
+            FROM documents
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limit, offset])
+
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
             return [DocumentRecord(**dict(row)) for row in rows]
-    
+
     def update_document_status(self, doc_id: str, status: str, total_chunks: Optional[int] = None):
         """
         更新文档状态
@@ -800,7 +820,128 @@ class PgVectorStore:
             stats['documents_by_status'] = {row['status']: row['count'] for row in cur.fetchall()}
         
         return stats
-    
+
+    # ============================================================
+    # 知识库管理
+    # ============================================================
+
+    def create_knowledge_base(self, kb_id: str, name: str, description: Optional[str] = None) -> str:
+        """
+        创建知识库
+
+        【参数】
+            kb_id: 知识库ID
+            name: 知识库名称
+            description: 描述（可选）
+
+        【返回】
+            kb_id
+        """
+        sql = """
+            INSERT INTO knowledge_bases (kb_id, name, description)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (kb_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING kb_id
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, (kb_id, name, description))
+            return cur.fetchone()[0]
+
+    def get_knowledge_base(self, kb_id: str) -> Optional[KnowledgeBaseRecord]:
+        """
+        获取知识库
+
+        【参数】
+            kb_id: 知识库ID
+
+        【返回】
+            KnowledgeBaseRecord对象，不存在则返回None
+        """
+        sql = """
+            SELECT kb_id, name, description, created_at, updated_at
+            FROM knowledge_bases WHERE kb_id = %s
+        """
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, (kb_id,))
+            row = cur.fetchone()
+            if row:
+                return KnowledgeBaseRecord(**dict(row))
+        return None
+
+    def list_knowledge_bases(self) -> List[KnowledgeBaseRecord]:
+        """
+        列出所有知识库
+
+        【返回】
+            KnowledgeBaseRecord列表
+        """
+        sql = """
+            SELECT kb_id, name, description, created_at, updated_at
+            FROM knowledge_bases ORDER BY created_at DESC
+        """
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+            return [KnowledgeBaseRecord(**dict(row)) for row in rows]
+
+    def update_knowledge_base(self, kb_id: str, name: str = None, description: str = None) -> bool:
+        """
+        更新知识库
+
+        【参数】
+            kb_id: 知识库ID
+            name: 新名称（可选）
+            description: 新描述（可选）
+
+        【返回】
+            是否成功
+        """
+        updates = []
+        params = []
+        if name is not None:
+            updates.append("name = %s")
+            params.append(name)
+        if description is not None:
+            updates.append("description = %s")
+            params.append(description)
+
+        if not updates:
+            return False
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(kb_id)
+
+        sql = f"""
+            UPDATE knowledge_bases SET {', '.join(updates)}
+            WHERE kb_id = %s
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.rowcount > 0
+
+    def delete_knowledge_base(self, kb_id: str) -> bool:
+        """
+        删除知识库（同时将文档的kb_id设为NULL）
+
+        【参数】
+            kb_id: 知识库ID
+
+        【返回】
+            是否成功
+        """
+        if kb_id == "default":
+            return False  # 不能删除默认知识库
+
+        with self.conn.cursor() as cur:
+            # 先将文档的kb_id设为NULL
+            cur.execute("UPDATE documents SET kb_id = NULL WHERE kb_id = %s", (kb_id,))
+            # 删除知识库
+            cur.execute("DELETE FROM knowledge_bases WHERE kb_id = %s", (kb_id,))
+            return cur.rowcount > 0
+
     def clear_all(self):
         """
         清空所有数据
