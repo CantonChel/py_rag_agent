@@ -44,6 +44,9 @@
         }
 
         .main-shell {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 36px);
             border: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 26px;
             background: rgba(255, 255, 255, 0.12);
@@ -98,11 +101,15 @@
         .layout {
             display: grid;
             grid-template-columns: 280px minmax(0, 1fr) 360px;
-            min-height: calc(100vh - 120px);
+            flex: 1;
+            min-height: 0;
         }
 
         .session-sidebar,
         .doc-sidebar {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
             padding: 18px;
             background: rgba(255, 255, 255, 0.5);
             backdrop-filter: blur(10px);
@@ -120,6 +127,7 @@
             display: flex;
             flex-direction: column;
             min-width: 0;
+            min-height: 0;
             padding: 18px 20px 20px;
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.32));
         }
@@ -152,6 +160,9 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            min-height: 0;
+            overflow-y: auto;
+            padding-right: 4px;
         }
 
         .session-item {
@@ -291,7 +302,7 @@
             flex: 1;
             min-height: 0;
             overflow-y: auto;
-            scroll-behavior: smooth;
+            overscroll-behavior: contain;
             padding: 22px;
             border-radius: 26px;
             background:
@@ -392,13 +403,18 @@
             color: #475569;
             font-size: 13px;
             line-height: 1.7;
-            white-space: pre-wrap;
+        }
+
+        .reasoning-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
         }
 
         .reasoning-label {
             display: inline-flex;
             align-items: center;
-            margin-bottom: 8px;
             padding: 3px 8px;
             border-radius: 999px;
             background: rgba(148, 163, 184, 0.15);
@@ -406,6 +422,28 @@
             font-size: 11px;
             font-weight: 700;
             letter-spacing: 0.04em;
+        }
+
+        .reasoning-toggle,
+        .sources-toggle,
+        .source-toggle {
+            border: none;
+            padding: 0;
+            background: transparent;
+            color: #64748b;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .reasoning-preview,
+        .reasoning-content {
+            margin-top: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .reasoning-preview {
+            color: #64748b;
         }
 
         .assistant-answer {
@@ -429,12 +467,25 @@
             color: var(--muted);
         }
 
+        .sources-head-left {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
         .source-card {
             padding: 12px 13px;
             border-radius: 16px;
             background: var(--panel-soft);
             border: 1px solid rgba(191, 219, 254, 0.55);
             margin-bottom: 10px;
+        }
+
+        .source-card-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
         }
 
         .source-title {
@@ -449,6 +500,15 @@
             color: var(--muted);
             line-height: 1.55;
             margin-bottom: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .source-text.collapsed {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
 
         .source-score {
@@ -681,6 +741,7 @@
         @media (max-width: 1120px) {
             .layout {
                 grid-template-columns: 1fr;
+                overflow-y: auto;
             }
 
             .session-sidebar,
@@ -702,6 +763,10 @@
         @media (max-width: 720px) {
             #app {
                 padding: 10px;
+            }
+
+            .main-shell {
+                height: calc(100vh - 20px);
             }
 
             .topbar {
@@ -876,31 +941,61 @@
                                         <div>{{ msg.content }}</div>
                                     </template>
                                     <template v-else>
-                                        <div
-                                            v-for="(reason, reasonIdx) in getAssistantReasonings(msg)"
-                                            :key="`reason-${index}-${reasonIdx}`"
-                                            class="reasoning-block"
-                                        >
-                                            <div class="reasoning-label">思考中</div>
-                                            {{ reason }}
+                                        <div v-if="hasReasoning(msg)" class="reasoning-block">
+                                            <div class="reasoning-head">
+                                                <div class="reasoning-label">{{ getReasoningLabel(msg) }}</div>
+                                                <button
+                                                    type="button"
+                                                    class="reasoning-toggle"
+                                                    @click="toggleReasoning(msg)"
+                                                >
+                                                    {{ isReasoningExpanded(msg) ? '收起' : '展开' }}
+                                                </button>
+                                            </div>
+                                            <div v-if="isReasoningExpanded(msg)" class="reasoning-content">{{ msg.reasoning }}</div>
+                                            <div v-else class="reasoning-preview">{{ getReasoningPreview(msg) }}</div>
                                         </div>
                                         <div v-if="getAssistantAnswer(msg)" class="assistant-answer">{{ getAssistantAnswer(msg) }}</div>
 
                                         <div v-if="msg.sources && msg.sources.length > 0" class="sources-wrap">
                                             <div class="sources-head">
-                                                <span>参考来源</span>
-                                                <span>{{ msg.sources.length }} 条</span>
+                                                <div class="sources-head-left">
+                                                    <span>参考来源</span>
+                                                    <span>{{ msg.sources.length }} 条</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    class="sources-toggle"
+                                                    @click="toggleSources(msg)"
+                                                >
+                                                    {{ areSourcesExpanded(msg) ? '收起' : '展开' }}
+                                                </button>
                                             </div>
                                             <div
+                                                v-if="areSourcesExpanded(msg)"
                                                 v-for="(source, sourceIdx) in msg.sources"
                                                 :key="`source-${index}-${sourceIdx}`"
                                                 class="source-card"
                                             >
-                                                <div class="source-title">
-                                                    {{ source.file_name || '来源文档' }}
-                                                    <span v-if="source.page_number"> · 第 {{ source.page_number }} 页</span>
+                                                <div class="source-card-head">
+                                                    <div class="source-title">
+                                                        {{ source.file_name || '来源文档' }}
+                                                        <span v-if="source.page_number"> · 第 {{ source.page_number }} 页</span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        class="source-toggle"
+                                                        @click="toggleSourceItem(msg, sourceIdx)"
+                                                    >
+                                                        {{ isSourceItemExpanded(msg, sourceIdx) ? '收起' : '展开' }}
+                                                    </button>
                                                 </div>
-                                                <div class="source-text">{{ source.text }}</div>
+                                                <div
+                                                    class="source-text"
+                                                    :class="{ collapsed: !isSourceItemExpanded(msg, sourceIdx) }"
+                                                >
+                                                    {{ source.text }}
+                                                </div>
                                                 <div class="source-score">相似度 {{ ((source.similarity || 0) * 100).toFixed(1) }}%</div>
                                             </div>
                                         </div>
@@ -1221,6 +1316,9 @@
                 _pendingAnswer,
                 _pendingReasoning,
                 _flushScheduled,
+                _reasoningExpanded,
+                _sourcesExpanded,
+                _expandedSourceIndexes,
                 ...cleanMessage
             } = message;
 
@@ -1455,8 +1553,55 @@
                     return msg?.answer || msg?.content || '';
                 };
 
-                const getAssistantReasonings = (msg) => {
-                    return msg?.reasoning ? [msg.reasoning] : [];
+                const hasReasoning = (msg) => Boolean(msg?.reasoning && String(msg.reasoning).trim());
+
+                const isReasoningExpanded = (msg) => Boolean(msg?._reasoningExpanded);
+
+                const getReasoningLabel = (msg) => getAssistantAnswer(msg) ? '已完成思考' : '思考中';
+
+                const getReasoningPreview = (msg) => {
+                    if (!hasReasoning(msg)) return '';
+                    if (!getAssistantAnswer(msg)) {
+                        return '模型正在思考，回答会在思考完成后开始输出。';
+                    }
+                    const compact = String(msg.reasoning || '').replace(/\s+/g, ' ').trim();
+                    return compact.length > 48 ? `${compact.slice(0, 48)}...` : compact;
+                };
+
+                const toggleReasoning = (msg) => {
+                    msg._reasoningExpanded = !msg._reasoningExpanded;
+                    scheduleScrollToBottom();
+                };
+
+                const ensureSourceUiState = (msg) => {
+                    if (!Array.isArray(msg._expandedSourceIndexes)) {
+                        msg._expandedSourceIndexes = [];
+                    }
+                };
+
+                const areSourcesExpanded = (msg) => Boolean(msg?._sourcesExpanded);
+
+                const toggleSources = (msg) => {
+                    msg._sourcesExpanded = !msg._sourcesExpanded;
+                    ensureSourceUiState(msg);
+                    scheduleScrollToBottom();
+                };
+
+                const isSourceItemExpanded = (msg, sourceIdx) => {
+                    ensureSourceUiState(msg);
+                    return msg._expandedSourceIndexes.includes(sourceIdx);
+                };
+
+                const toggleSourceItem = (msg, sourceIdx) => {
+                    ensureSourceUiState(msg);
+                    const target = msg._expandedSourceIndexes;
+                    const index = target.indexOf(sourceIdx);
+                    if (index > -1) {
+                        target.splice(index, 1);
+                    } else {
+                        target.push(sourceIdx);
+                    }
+                    scheduleScrollToBottom();
                 };
 
                 const getSessionPreview = (session) => session.preview || '还没有消息';
@@ -1518,8 +1663,10 @@
                 };
 
                 const scheduleScrollToBottom = () => {
-                    window.requestAnimationFrame(() => {
-                        scrollToBottom();
+                    nextTick(() => {
+                        window.requestAnimationFrame(() => {
+                            scrollToBottom();
+                        });
                     });
                 };
 
@@ -1603,6 +1750,9 @@
                         answer: '',
                         reasoning: '',
                         sources: [],
+                        _reasoningExpanded: false,
+                        _sourcesExpanded: false,
+                        _expandedSourceIndexes: [],
                         _pendingAnswer: '',
                         _pendingReasoning: '',
                         _flushScheduled: false
@@ -1912,7 +2062,15 @@
                     getSessionPreview,
                     formatRelativeTime,
                     getAssistantAnswer,
-                    getAssistantReasonings,
+                    hasReasoning,
+                    getReasoningLabel,
+                    getReasoningPreview,
+                    isReasoningExpanded,
+                    toggleReasoning,
+                    areSourcesExpanded,
+                    toggleSources,
+                    isSourceItemExpanded,
+                    toggleSourceItem,
                     fillSuggestion,
                     sendMessage,
                     toggleDocSelection,
