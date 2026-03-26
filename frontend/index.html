@@ -1112,8 +1112,10 @@
     <script>
         const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
 
-        const STORAGE_SESSIONS_KEY = 'rag_chat_sessions_v2';
-        const STORAGE_ACTIVE_KEY = 'rag_chat_active_v2';
+        const STORAGE_SESSIONS_KEY = 'rag_chat_sessions_v3';
+        const STORAGE_ACTIVE_KEY = 'rag_chat_active_v3';
+        const LEGACY_STORAGE_SESSIONS_KEY = 'rag_chat_sessions_v2';
+        const LEGACY_STORAGE_ACTIVE_KEY = 'rag_chat_active_v2';
 
         function safeParse(value, fallback) {
             try {
@@ -1150,16 +1152,7 @@
             return text.length > 24 ? `${text.slice(0, 24)}...` : text;
         }
 
-        function sessionPreviewFromMessages(messages) {
-            const lastMessage = [...(messages || [])].reverse().find(item => item.content && String(item.content).trim());
-            if (!lastMessage) {
-                return '还没有消息';
-            }
-            const text = String(lastMessage.content).replace(/\s+/g, ' ').trim();
-            return text.length > 40 ? `${text.slice(0, 40)}...` : text;
-        }
-
-        function parseThinkContent(text) {
+        function parseLegacyThinkContent(text) {
             const raw = String(text ?? '');
             const reasonings = [];
             const answers = [];
@@ -1197,6 +1190,90 @@
             };
         }
 
+        function getMessageDisplayText(message) {
+            if (!message) return '';
+            if (message.role === 'assistant') {
+                return String(message.answer || message.content || '').trim();
+            }
+            return String(message.content || '').trim();
+        }
+
+        function normalizeMessage(message) {
+            if (!message || typeof message !== 'object') {
+                return null;
+            }
+
+            const {
+                _pendingAnswer,
+                _pendingReasoning,
+                _flushScheduled,
+                ...cleanMessage
+            } = message;
+
+            if (cleanMessage.role !== 'assistant') {
+                return {
+                    ...cleanMessage,
+                    content: String(cleanMessage.content || '')
+                };
+            }
+
+            const legacyParsed = cleanMessage.answer
+                ? null
+                : parseLegacyThinkContent(cleanMessage.content || '');
+            const reasoningParts = [];
+
+            if (legacyParsed?.reasonings?.length) {
+                reasoningParts.push(legacyParsed.reasonings.join('\n\n'));
+            }
+            if (cleanMessage.reasoning) {
+                reasoningParts.push(String(cleanMessage.reasoning));
+            }
+
+            const answer = String(
+                cleanMessage.answer
+                || legacyParsed?.answer
+                || cleanMessage.content
+                || ''
+            );
+
+            return {
+                ...cleanMessage,
+                answer,
+                content: answer,
+                reasoning: reasoningParts.filter(Boolean).join('\n\n'),
+                sources: Array.isArray(cleanMessage.sources) ? cleanMessage.sources : []
+            };
+        }
+
+        function sessionPreviewFromMessages(messages) {
+            const lastMessage = [...(messages || [])]
+                .reverse()
+                .find(item => getMessageDisplayText(item));
+            if (!lastMessage) {
+                return '还没有消息';
+            }
+            const text = getMessageDisplayText(lastMessage).replace(/\s+/g, ' ').trim();
+            return text.length > 40 ? `${text.slice(0, 40)}...` : text;
+        }
+
+        function normalizeSessionRecord(session) {
+            const now = Date.now();
+            const messages = Array.isArray(session?.messages)
+                ? session.messages.map(normalizeMessage).filter(Boolean)
+                : [];
+
+            return {
+                id: session?.id || `session_${now}_${Math.random().toString(36).slice(2, 7)}`,
+                title: session?.title || sessionTitleFromMessages(messages),
+                preview: sessionPreviewFromMessages(messages) || session?.preview || '还没有消息',
+                createdAt: session?.createdAt || now,
+                updatedAt: session?.updatedAt || session?.createdAt || now,
+                conversationId: session?.conversationId || null,
+                selectedDocs: Array.isArray(session?.selectedDocs) ? [...session.selectedDocs] : [],
+                messages
+            };
+        }
+
         const app = createApp({
             setup() {
                 const apiBase = ref('http://localhost:8000');
@@ -1222,6 +1299,7 @@
                 const loading = ref(false);
                 const streamStarted = ref(false);
                 const chatContainer = ref(null);
+                let statsTimer = null;
 
                 const renameDialogVisible = ref(false);
                 const newFileName = ref('');
@@ -1243,6 +1321,8 @@
                     if (currentSessionId.value) {
                         localStorage.setItem(STORAGE_ACTIVE_KEY, currentSessionId.value);
                     }
+                    localStorage.removeItem(LEGACY_STORAGE_SESSIONS_KEY);
+                    localStorage.removeItem(LEGACY_STORAGE_ACTIVE_KEY);
                 };
 
                 const sortSessions = () => {
@@ -1270,7 +1350,7 @@
                 const applySession = (session) => {
                     currentSessionId.value = session.id;
                     conversationId.value = session.conversationId || null;
-                    messages.value = clone(session.messages || []);
+                    messages.value = (session.messages || []).map(normalizeMessage).filter(Boolean);
                     selectedDocs.value = [...(session.selectedDocs || [])];
                     persistSessions();
 
@@ -1318,8 +1398,14 @@
                 };
 
                 const initializeSessions = () => {
-                    const stored = safeParse(localStorage.getItem(STORAGE_SESSIONS_KEY), []);
-                    sessions.value = Array.isArray(stored) ? stored : [];
+                    const stored = safeParse(
+                        localStorage.getItem(STORAGE_SESSIONS_KEY)
+                        || localStorage.getItem(LEGACY_STORAGE_SESSIONS_KEY),
+                        []
+                    );
+                    sessions.value = Array.isArray(stored)
+                        ? stored.map(normalizeSessionRecord)
+                        : [];
                     sortSessions();
 
                     if (sessions.value.length === 0) {
@@ -1327,32 +1413,19 @@
                         sessions.value = [session];
                     }
 
-                    const preferredId = localStorage.getItem(STORAGE_ACTIVE_KEY);
+                    const preferredId = localStorage.getItem(STORAGE_ACTIVE_KEY)
+                        || localStorage.getItem(LEGACY_STORAGE_ACTIVE_KEY);
                     const session = sessions.value.find(item => item.id === preferredId) || sessions.value[0];
                     applySession(session);
+                    persistSessions();
                 };
 
                 const getAssistantAnswer = (msg) => {
-                    const parsed = parseThinkContent(msg?.content || '');
-                    return parsed.answer;
+                    return msg?.answer || msg?.content || '';
                 };
 
                 const getAssistantReasonings = (msg) => {
-                    const parsed = parseThinkContent(msg?.content || '');
-                    const blocks = [...parsed.reasonings];
-                    if (msg?.reasoning) {
-                        blocks.push(msg.reasoning);
-                    }
-
-                    const deduped = [];
-                    const seen = new Set();
-                    for (const item of blocks) {
-                        const key = String(item || '').trim();
-                        if (!key || seen.has(key)) continue;
-                        seen.add(key);
-                        deduped.push(item);
-                    }
-                    return deduped;
+                    return msg?.reasoning ? [msg.reasoning] : [];
                 };
 
                 const getSessionPreview = (session) => session.preview || '还没有消息';
@@ -1413,34 +1486,70 @@
                     userInput.value = text;
                 };
 
+                const scheduleScrollToBottom = () => {
+                    window.requestAnimationFrame(() => {
+                        scrollToBottom();
+                    });
+                };
+
+                const flushBufferedStream = (assistantMessage) => {
+                    if (!assistantMessage) return;
+
+                    const pendingAnswer = assistantMessage._pendingAnswer || '';
+                    const pendingReasoning = assistantMessage._pendingReasoning || '';
+                    assistantMessage._pendingAnswer = '';
+                    assistantMessage._pendingReasoning = '';
+                    assistantMessage._flushScheduled = false;
+
+                    if (pendingAnswer) {
+                        assistantMessage.answer += pendingAnswer;
+                        assistantMessage.content = assistantMessage.answer;
+                    }
+                    if (pendingReasoning) {
+                        assistantMessage.reasoning += pendingReasoning;
+                    }
+                };
+
+                const scheduleBufferedStream = (assistantMessage) => {
+                    if (assistantMessage._flushScheduled) return;
+                    assistantMessage._flushScheduled = true;
+
+                    window.requestAnimationFrame(() => {
+                        flushBufferedStream(assistantMessage);
+                        streamStarted.value = Boolean(assistantMessage.answer || assistantMessage.reasoning);
+                        scheduleScrollToBottom();
+                    });
+                };
+
                 const handleStreamEvent = (assistantMessage, event) => {
                     if (event.type === 'start') {
                         conversationId.value = event.conversation_id || conversationId.value;
+                        syncCurrentSession(false);
                         return;
                     }
                     if (event.type === 'delta') {
-                        assistantMessage.content += event.content || '';
-                        streamStarted.value = true;
-                        scrollToBottom();
+                        assistantMessage._pendingAnswer += event.content || '';
+                        scheduleBufferedStream(assistantMessage);
                         return;
                     }
                     if (event.type === 'reasoning_delta') {
-                        assistantMessage.reasoning += event.content || '';
-                        streamStarted.value = true;
-                        scrollToBottom();
+                        assistantMessage._pendingReasoning += event.content || '';
+                        scheduleBufferedStream(assistantMessage);
                         return;
                     }
                     if (event.type === 'done') {
+                        flushBufferedStream(assistantMessage);
                         conversationId.value = event.conversation_id || conversationId.value;
                         assistantMessage.sources = event.sources || [];
-                        if (!assistantMessage.content) {
-                            assistantMessage.content = event.answer || '';
+                        if (event.answer && assistantMessage.answer.length < event.answer.length) {
+                            assistantMessage.answer = event.answer || '';
                         }
-                        if (event.reasoning) {
+                        assistantMessage.content = assistantMessage.answer;
+                        if (event.reasoning && assistantMessage.reasoning.length < event.reasoning.length) {
                             assistantMessage.reasoning = event.reasoning;
                         }
                         streamStarted.value = true;
-                        scrollToBottom();
+                        scheduleScrollToBottom();
                     }
                 };
 
@@ -1460,8 +1569,12 @@
                         id: `msg_assistant_${Date.now()}`,
                         role: 'assistant',
                         content: '',
+                        answer: '',
                         reasoning: '',
-                        sources: []
+                        sources: [],
+                        _pendingAnswer: '',
+                        _pendingReasoning: '',
+                        _flushScheduled: false
                     };
                     messages.value.push(assistantMessage);
 
@@ -1536,14 +1649,31 @@
                             }
                         }
 
-                        if (!finished && !assistantMessage.content && !assistantMessage.reasoning) {
+                        if (buffer.trim()) {
+                            const payload = buffer
+                                .split('\n')
+                                .filter(line => line.startsWith('data:'))
+                                .map(line => line.slice(5).trim())
+                                .join('');
+                            if (payload) {
+                                const event = JSON.parse(payload);
+                                handleStreamEvent(assistantMessage, event);
+                                if (event.type === 'done') {
+                                    finished = true;
+                                }
+                            }
+                        }
+
+                        if (!finished && !assistantMessage.answer && !assistantMessage.reasoning) {
                             throw new Error('服务端未返回有效内容');
                         }
 
+                        flushBufferedStream(assistantMessage);
                         syncCurrentSession(true);
                     } catch (error) {
                         console.error('发送消息失败:', error);
-                        assistantMessage.content = `抱歉，发生了错误：${error.message}`;
+                        assistantMessage.answer = `抱歉，发生了错误：${error.message}`;
+                        assistantMessage.content = assistantMessage.answer;
                         assistantMessage.reasoning = '';
                         assistantMessage.sources = [];
                         syncCurrentSession(true);
@@ -1711,7 +1841,7 @@
                 onMounted(async () => {
                     initializeSessions();
                     await refreshKnowledgePane();
-                    setInterval(loadStats, 30000);
+                    statsTimer = setInterval(loadStats, 30000);
                 });
 
                 return {

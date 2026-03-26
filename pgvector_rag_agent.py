@@ -30,6 +30,71 @@ class RAGResponse:
     reasoning: Optional[str] = None
 
 
+class ThinkTagStreamParser:
+    """将 content 中的 <think> 标签流式拆分为答案和思考内容。"""
+
+    OPEN_TAG = "<think>"
+    CLOSE_TAG = "</think>"
+
+    def __init__(self):
+        self.state = "normal"
+        self.tag_buffer = ""
+
+    def feed(self, text: str) -> Dict[str, str]:
+        if not text:
+            return {"content": "", "reasoning": ""}
+
+        content_parts: List[str] = []
+        reasoning_parts: List[str] = []
+        combined = f"{self.tag_buffer}{text}"
+        self.tag_buffer = ""
+        cursor = 0
+
+        while cursor < len(combined):
+            active_tag = self.CLOSE_TAG if self.state == "in_think" else self.OPEN_TAG
+            target = reasoning_parts if self.state == "in_think" else content_parts
+
+            if combined.startswith(active_tag, cursor):
+                self.state = "normal" if self.state == "in_think" else "in_think"
+                cursor += len(active_tag)
+                continue
+
+            char = combined[cursor]
+            if char == "<":
+                tail = combined[cursor:]
+                if active_tag.startswith(tail):
+                    self.tag_buffer = tail
+                    break
+
+            target.append(char)
+            cursor += 1
+
+        return {
+            "content": "".join(content_parts),
+            "reasoning": "".join(reasoning_parts),
+        }
+
+    def flush(self) -> Dict[str, str]:
+        if not self.tag_buffer:
+            return {"content": "", "reasoning": ""}
+
+        pending = self.tag_buffer
+        self.tag_buffer = ""
+        target = "reasoning" if self.state == "in_think" else "content"
+        return {
+            "content": pending if target == "content" else "",
+            "reasoning": pending if target == "reasoning" else "",
+        }
+
+    def split_full_text(self, text: str) -> Dict[str, str]:
+        result = self.feed(text)
+        pending = self.flush()
+        return {
+            "content": result["content"] + pending["content"],
+            "reasoning": result["reasoning"] + pending["reasoning"],
+        }
+
+
 class EmbeddingService:
     """
     Embedding服务 - 将文本转换为向量
@@ -260,6 +325,15 @@ class PgVectorRAGAgent:
                     return text
         return ""
 
+    def _normalize_message_output(self, content: str, reasoning: str) -> Dict[str, str]:
+        """兼容 content 中内嵌 <think> 的非流式结果。"""
+        parser = ThinkTagStreamParser()
+        parsed = parser.split_full_text(content or "")
+        return {
+            "content": parsed["content"],
+            "reasoning": f"{reasoning or ''}{parsed['reasoning']}",
+        }
+
     def _stream_llm_response(self, user_message: str) -> Iterator[Dict[str, str]]:
         """调用LLM流式生成回答，返回answer/reasoning增量"""
         stream = self.llm_client.chat.completions.create(
@@ -273,16 +347,25 @@ class PgVectorRAGAgent:
             stream=True
         )
 
+        think_parser = ThinkTagStreamParser()
         for chunk in stream:
             delta = chunk.choices[0].delta
-            answer_delta = self._extract_text(getattr(delta, "content", None))
+            content_delta = self._extract_text(getattr(delta, "content", None))
             reasoning_delta = self._extract_reasoning_from_delta(delta)
+            parsed_delta = think_parser.feed(content_delta)
 
-            if answer_delta or reasoning_delta:
+            answer_delta = parsed_delta["content"]
+            merged_reasoning = f"{reasoning_delta}{parsed_delta['reasoning']}"
+
+            if answer_delta or merged_reasoning:
                 yield {
                     "content": answer_delta,
-                    "reasoning": reasoning_delta
+                    "reasoning": merged_reasoning
                 }
+
+        tail = think_parser.flush()
+        if tail["content"] or tail["reasoning"]:
+            yield tail
 
     def prepare_chat(
         self,
@@ -418,8 +501,12 @@ class PgVectorRAGAgent:
         )
 
         message = response.choices[0].message
-        answer = self._extract_text(getattr(message, "content", None))
-        reasoning = self._extract_reasoning_from_message(message)
+        normalized = self._normalize_message_output(
+            self._extract_text(getattr(message, "content", None)),
+            self._extract_reasoning_from_message(message)
+        )
+        answer = normalized["content"]
+        reasoning = normalized["reasoning"]
 
         if self.verbose:
             print(f"\n[回答]\n{answer}")
