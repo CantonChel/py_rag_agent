@@ -85,7 +85,9 @@ class DocumentInfo(BaseModel):
     file_size: Optional[int] = None
     total_pages: int = 0
     total_chunks: int = 0
+    total_images: int = 0
     status: str
+    kb_id: str = "default"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -94,6 +96,33 @@ class DocumentListResponse(BaseModel):
     """文档列表响应"""
     total: int
     documents: List[DocumentInfo]
+
+
+class KnowledgeBaseInfo(BaseModel):
+    """知识库信息模型"""
+    kb_id: str
+    name: str
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class KnowledgeBaseListResponse(BaseModel):
+    """知识库列表响应"""
+    total: int
+    knowledge_bases: List[KnowledgeBaseInfo]
+
+
+class KnowledgeBaseCreateRequest(BaseModel):
+    """创建知识库请求"""
+    name: str = Field(..., description="知识库名称", min_length=1, max_length=255)
+    description: Optional[str] = Field(None, description="知识库描述")
+
+
+class KnowledgeBaseUpdateRequest(BaseModel):
+    """更新知识库请求"""
+    name: Optional[str] = Field(None, description="知识库名称", min_length=1, max_length=255)
+    description: Optional[str] = Field(None, description="知识库描述")
 
 
 class ChatRequest(BaseModel):
@@ -287,17 +316,18 @@ async def shutdown_event():
 @app.post("/api/documents/upload", response_model=UploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
+    kb_id: str = Form("default", description="知识库ID"),
     background_tasks: BackgroundTasks = None
 ):
     """
     上传文档
-    
+
     【处理流程】
     1. 验证文件类型和大小
     2. 上传到MinIO存储
     3. 创建文档记录
     4. 后台异步处理文档（解析、分块、向量化）
-    
+
     【支持的文件类型】
     - PDF (.pdf)
     - Word (.docx, .doc)
@@ -346,7 +376,8 @@ async def upload_document(
             file_size=file_size,
             minio_bucket=upload_result.get("bucket"),
             minio_object_name=upload_result.get("object_name"),
-            status="pending"
+            status="pending",
+            kb_id=kb_id
         )
         pgvector.add_document(doc)
         
@@ -489,39 +520,173 @@ async def process_document_task(doc_id: str, minio_object: str):
 @app.get("/api/documents", response_model=DocumentListResponse)
 async def list_documents(
     status: Optional[str] = Query(None, description="按状态过滤"),
+    kb_id: Optional[str] = Query(None, description="按知识库ID过滤"),
     limit: int = Query(20, ge=1, le=100, description="返回数量"),
     offset: int = Query(0, ge=0, description="偏移量")
 ):
     """
     获取文档列表
-    
+
     【参数】
     - status: 按状态过滤（pending, processing, completed, failed）
+    - kb_id: 按知识库ID过滤
     - limit: 返回数量
     - offset: 分页偏移
     """
     pgvector = get_pgvector()
-    docs = pgvector.list_documents(status=status, limit=limit, offset=offset)
-    
-    document_infos = [
-        DocumentInfo(
+    docs = pgvector.list_documents(status=status, kb_id=kb_id, limit=limit, offset=offset)
+
+    # 获取每个文档的图片数量
+    minio = get_minio()
+
+    document_infos = []
+    for doc in docs:
+        image_count = len(minio.get_images_by_doc(doc.doc_id)) if hasattr(minio, 'get_images_by_doc') else 0
+        document_infos.append(DocumentInfo(
             doc_id=doc.doc_id,
             file_name=doc.file_name,
             file_type=doc.file_type,
             file_size=doc.file_size,
             total_pages=doc.total_pages,
             total_chunks=doc.total_chunks,
+            total_images=image_count,
             status=doc.status,
+            kb_id=doc.kb_id,
             created_at=doc.created_at,
             updated_at=doc.updated_at
-        )
-        for doc in docs
-    ]
-    
+        ))
+
     return DocumentListResponse(
         total=len(document_infos),
         documents=document_infos
     )
+
+
+# ============================================================
+# 知识库管理接口
+# ============================================================
+
+def generate_kb_id() -> str:
+    """生成知识库ID"""
+    import time
+    import random
+    return f"kb_{int(time.time())}_{random.randint(1000, 9999)}"
+
+
+@app.post("/api/knowledge-bases", response_model=KnowledgeBaseInfo)
+async def create_knowledge_base(request: KnowledgeBaseCreateRequest):
+    """
+    创建知识库
+
+    【参数】
+    - name: 知识库名称
+    - description: 知识库描述（可选）
+    """
+    kb_id = generate_kb_id()
+    pgvector = get_pgvector()
+    pgvector.create_knowledge_base(kb_id, request.name, request.description)
+
+    kb = pgvector.get_knowledge_base(kb_id)
+    return KnowledgeBaseInfo(
+        kb_id=kb.kb_id,
+        name=kb.name,
+        description=kb.description,
+        created_at=kb.created_at,
+        updated_at=kb.updated_at
+    )
+
+
+@app.get("/api/knowledge-bases", response_model=KnowledgeBaseListResponse)
+async def list_knowledge_bases():
+    """
+    获取知识库列表
+    """
+    pgvector = get_pgvector()
+    kbs = pgvector.list_knowledge_bases()
+
+    kb_infos = [
+        KnowledgeBaseInfo(
+            kb_id=kb.kb_id,
+            name=kb.name,
+            description=kb.description,
+            created_at=kb.created_at,
+            updated_at=kb.updated_at
+        )
+        for kb in kbs
+    ]
+
+    return KnowledgeBaseListResponse(
+        total=len(kb_infos),
+        knowledge_bases=kb_infos
+    )
+
+
+@app.get("/api/knowledge-bases/{kb_id}", response_model=KnowledgeBaseInfo)
+async def get_knowledge_base(kb_id: str):
+    """
+    获取知识库详情
+    """
+    pgvector = get_pgvector()
+    kb = pgvector.get_knowledge_base(kb_id)
+
+    if not kb:
+        raise HTTPException(status_code=404, detail=f"知识库不存在: {kb_id}")
+
+    return KnowledgeBaseInfo(
+        kb_id=kb.kb_id,
+        name=kb.name,
+        description=kb.description,
+        created_at=kb.created_at,
+        updated_at=kb.updated_at
+    )
+
+
+@app.put("/api/knowledge-bases/{kb_id}", response_model=KnowledgeBaseInfo)
+async def update_knowledge_base(kb_id: str, request: KnowledgeBaseUpdateRequest):
+    """
+    更新知识库
+
+    【参数】
+    - kb_id: 知识库ID
+    - name: 新名称（可选）
+    - description: 新描述（可选）
+    """
+    pgvector = get_pgvector()
+    kb = pgvector.get_knowledge_base(kb_id)
+
+    if not kb:
+        raise HTTPException(status_code=404, detail=f"知识库不存在: {kb_id}")
+
+    pgvector.update_knowledge_base(kb_id, request.name, request.description)
+
+    kb = pgvector.get_knowledge_base(kb_id)
+    return KnowledgeBaseInfo(
+        kb_id=kb.kb_id,
+        name=kb.name,
+        description=kb.description,
+        created_at=kb.created_at,
+        updated_at=kb.updated_at
+    )
+
+
+@app.delete("/api/knowledge-bases/{kb_id}")
+async def delete_knowledge_base(kb_id: str):
+    """
+    删除知识库
+
+    【参数】
+    - kb_id: 知识库ID
+    """
+    if kb_id == "default":
+        raise HTTPException(status_code=400, detail="不能删除默认知识库")
+
+    pgvector = get_pgvector()
+    success = pgvector.delete_knowledge_base(kb_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail=f"知识库不存在: {kb_id}")
+
+    return {"message": "知识库删除成功"}
 
 
 class ChunkWithImages(BaseModel):
