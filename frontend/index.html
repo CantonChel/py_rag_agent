@@ -1110,8 +1110,9 @@
     <script src="https://unpkg.com/@element-plus/icons-vue"></script>
 
     <script>
-        const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+        const { createApp, ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } = Vue;
 
+        const STORAGE_VERSION = 3;
         const STORAGE_SESSIONS_KEY = 'rag_chat_sessions_v3';
         const STORAGE_ACTIVE_KEY = 'rag_chat_active_v3';
         const LEGACY_STORAGE_SESSIONS_KEY = 'rag_chat_sessions_v2';
@@ -1125,10 +1126,6 @@
             }
         }
 
-        function clone(value) {
-            return JSON.parse(JSON.stringify(value));
-        }
-
         function createSessionRecord() {
             const now = Date.now();
             return {
@@ -1137,6 +1134,7 @@
                 preview: '还没有消息',
                 createdAt: now,
                 updatedAt: now,
+                storageVersion: STORAGE_VERSION,
                 conversationId: null,
                 selectedDocs: [],
                 messages: []
@@ -1268,9 +1266,22 @@
                 preview: sessionPreviewFromMessages(messages) || session?.preview || '还没有消息',
                 createdAt: session?.createdAt || now,
                 updatedAt: session?.updatedAt || session?.createdAt || now,
+                storageVersion: STORAGE_VERSION,
                 conversationId: session?.conversationId || null,
                 selectedDocs: Array.isArray(session?.selectedDocs) ? [...session.selectedDocs] : [],
                 messages
+            };
+        }
+
+        function serializeMessage(message) {
+            return normalizeMessage(message);
+        }
+
+        function serializeSessionRecord(session) {
+            const normalized = normalizeSessionRecord(session);
+            return {
+                ...normalized,
+                messages: normalized.messages.map(serializeMessage)
             };
         }
 
@@ -1317,9 +1328,12 @@
                 });
 
                 const persistSessions = () => {
-                    localStorage.setItem(STORAGE_SESSIONS_KEY, JSON.stringify(sessions.value));
+                    const serializedSessions = sessions.value.map(serializeSessionRecord);
+                    localStorage.setItem(STORAGE_SESSIONS_KEY, JSON.stringify(serializedSessions));
                     if (currentSessionId.value) {
                         localStorage.setItem(STORAGE_ACTIVE_KEY, currentSessionId.value);
+                    } else {
+                        localStorage.removeItem(STORAGE_ACTIVE_KEY);
                     }
                     localStorage.removeItem(LEGACY_STORAGE_SESSIONS_KEY);
                     localStorage.removeItem(LEGACY_STORAGE_ACTIVE_KEY);
@@ -1334,7 +1348,7 @@
                     if (index === -1) return;
 
                     const session = sessions.value[index];
-                    session.messages = clone(messages.value);
+                    session.messages = messages.value.map(serializeMessage).filter(Boolean);
                     session.selectedDocs = [...selectedDocs.value];
                     session.conversationId = conversationId.value;
                     session.title = sessionTitleFromMessages(messages.value);
@@ -1348,10 +1362,11 @@
                 };
 
                 const applySession = (session) => {
-                    currentSessionId.value = session.id;
-                    conversationId.value = session.conversationId || null;
-                    messages.value = (session.messages || []).map(normalizeMessage).filter(Boolean);
-                    selectedDocs.value = [...(session.selectedDocs || [])];
+                    const normalizedSession = normalizeSessionRecord(session);
+                    currentSessionId.value = normalizedSession.id;
+                    conversationId.value = normalizedSession.conversationId || null;
+                    messages.value = normalizedSession.messages.map(normalizeMessage).filter(Boolean);
+                    selectedDocs.value = [...(normalizedSession.selectedDocs || [])];
                     persistSessions();
 
                     nextTick(() => {
@@ -1842,6 +1857,12 @@
                     initializeSessions();
                     await refreshKnowledgePane();
                     statsTimer = setInterval(loadStats, 30000);
+                });
+
+                onBeforeUnmount(() => {
+                    if (statsTimer) {
+                        clearInterval(statsTimer);
+                    }
                 });
 
                 return {
