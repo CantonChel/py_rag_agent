@@ -291,6 +291,7 @@
             flex: 1;
             min-height: 0;
             overflow-y: auto;
+            scroll-behavior: smooth;
             padding: 22px;
             border-radius: 26px;
             background:
@@ -386,16 +387,30 @@
             margin-bottom: 12px;
             padding: 12px 14px;
             border-radius: 16px;
-            background: #f1f5f9;
-            border-left: 3px solid #94a3b8;
-            color: #64748b;
+            background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            color: #475569;
             font-size: 13px;
             line-height: 1.7;
             white-space: pre-wrap;
         }
 
+        .reasoning-label {
+            display: inline-flex;
+            align-items: center;
+            margin-bottom: 8px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.15);
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+
         .assistant-answer {
             white-space: pre-wrap;
+            min-height: 1em;
         }
 
         .sources-wrap {
@@ -866,9 +881,10 @@
                                             :key="`reason-${index}-${reasonIdx}`"
                                             class="reasoning-block"
                                         >
+                                            <div class="reasoning-label">思考中</div>
                                             {{ reason }}
                                         </div>
-                                        <div class="assistant-answer">{{ getAssistantAnswer(msg) }}</div>
+                                        <div v-if="getAssistantAnswer(msg)" class="assistant-answer">{{ getAssistantAnswer(msg) }}</div>
 
                                         <div v-if="msg.sources && msg.sources.length > 0" class="sources-wrap">
                                             <div class="sources-head">
